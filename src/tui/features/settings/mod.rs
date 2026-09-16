@@ -8,3 +8,5 @@ mod view;
 pub use model::{Action, Model};
 pub use update::{keys, update};
 pub use view::view;
+#[cfg(test)]
+mod model_tests;

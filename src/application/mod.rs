@@ -9,3 +9,5 @@ pub use config::{Config, Credentials};
 pub use ports::{ConfigStore, JiraGateway, JiraGatewayFactory, StateStore};
 #[cfg(test)]
 pub mod test_support;
+#[cfg(test)]
+mod config_tests;

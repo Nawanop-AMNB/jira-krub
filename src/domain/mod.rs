@@ -24,3 +24,9 @@ mod entry_tests;
 mod ledger_tests;
 #[cfg(test)]
 mod week_tests;
+#[cfg(test)]
+mod calendar_tests;
+#[cfg(test)]
+mod entry_description_tests;
+#[cfg(test)]
+mod ledger_reconcile_tests;

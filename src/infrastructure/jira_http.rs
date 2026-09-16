@@ -357,3 +357,51 @@ mod tests {
         assert_eq!(ok.status, "Done");
     }
 }
+
+#[cfg(test)]
+mod adf_tests {
+    use super::*;
+
+    /// R3: a multi-line description round-trips through the Jira comment.
+    #[test]
+    fn a_hard_break_inside_a_paragraph_becomes_a_newline() {
+        let doc = json!({
+            "type": "doc", "version": 1,
+            "content": [{ "type": "paragraph", "content": [
+                { "type": "text", "text": "first" },
+                { "type": "hardBreak" },
+                { "type": "text", "text": "second" }
+            ]}]
+        });
+        assert_eq!(adf_text(&doc), "first\nsecond");
+    }
+
+    #[test]
+    fn a_trailing_hard_break_is_trimmed() {
+        let doc = json!({
+            "type": "doc", "version": 1,
+            "content": [{ "type": "paragraph", "content": [
+                { "type": "text", "text": "only line" },
+                { "type": "hardBreak" }
+            ]}]
+        });
+        assert_eq!(adf_text(&doc), "only line");
+    }
+
+    #[test]
+    fn adf_doc_puts_each_line_in_its_own_paragraph_node() {
+        let doc = adf_doc(&["a".to_string(), "b".to_string()]);
+        let paras = doc["content"].as_array().expect("content array");
+        assert_eq!(paras.len(), 2);
+        assert_eq!(paras[0]["type"], "paragraph");
+        assert_eq!(paras[1]["type"], "paragraph");
+        assert_eq!(paras[0]["content"][0]["text"], "a");
+        assert_eq!(paras[1]["content"][0]["text"], "b");
+    }
+
+    #[test]
+    fn description_lines_survive_a_round_trip_through_adf() {
+        let lines: Vec<String> = ["fix expiry", "also bumped the timeout", "see ABC-1"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(adf_text(&adf_doc(&lines)), lines.join("\n"));
+    }
+}

@@ -79,3 +79,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, deps: Deps) -> Result<()>
         }
     }
 }
+#[cfg(test)]
+pub mod test_support;
+#[cfg(test)]
+mod reducer_tests;

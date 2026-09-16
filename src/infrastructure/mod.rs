@@ -12,3 +12,5 @@ pub use toml_config::TomlConfigStore;
 pub use worker::Worker;
 #[cfg(test)]
 mod toml_config_tests;
+#[cfg(test)]
+mod toml_config_sections_tests;
