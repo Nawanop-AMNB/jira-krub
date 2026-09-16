@@ -55,8 +55,9 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
             KeyCode::Right => SearchCursor(1),
             KeyCode::Home => SearchCursor(i32::MIN),
             KeyCode::End => SearchCursor(i32::MAX),
-            // leave the box: selection is already on the first match
-            KeyCode::Up | KeyCode::Down => FocusTickets,
+            // the box is the top row of the pane: ↓ walks into the list, ↑ stays
+            KeyCode::Down => FocusTickets,
+            KeyCode::Up => return None,
             KeyCode::Backspace => SearchBackspace,
             KeyCode::Delete => SearchDelete,
             KeyCode::Char('u') if ctrl => SearchClear,
@@ -426,7 +427,9 @@ pub fn update(app: &mut App, action: Action) {
             let (t, p) = (ticket_rows(app, m).len() as i32, prepare_rows(app, m).rows.len() as i32);
             let m = model(app).unwrap();
             match m.pane {
-                Pane::Tickets if t > 0 => m.ticket_sel = (m.ticket_sel as i32 + delta).rem_euclid(t) as usize,
+                // ↑ past the first ticket lands on the search box (typing starts at once)
+                Pane::Tickets if delta < 0 && (m.ticket_sel == 0 || t == 0) => m.search_focused = true,
+                Pane::Tickets if t > 0 => m.ticket_sel = (m.ticket_sel as i32 + delta).min(t - 1) as usize,
                 Pane::Prepare if p > 0 => m.prepare_sel = (m.prepare_sel as i32 + delta).rem_euclid(p) as usize,
                 _ => {}
             }

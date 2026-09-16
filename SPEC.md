@@ -363,10 +363,10 @@ exactly one field is open for typing.
   text fields. The workdays chip row opens the same way: `←`/`→` pick,
   Space toggles, Enter commits, Esc reverts.
 - A walk form (Connect, popup) opens with its first field already in EDIT.
-- **Search boxes are the exception**: `/` (or click) opens them and typing
-  filters immediately; `←`/`→`/Home/End move the cursor inside the box,
-  `↓`/Enter leave to the list, Esc clears. They are never reached by
-  `↑`/`↓` focus walking, so the rule never collides.
+- **Search boxes are the exception**: they sit as the top row of their
+  pane, reached by `↑` from the first list row (or `/`, or click), and
+  typing filters immediately with no Enter; `←`/`→`/Home/End move the
+  cursor inside the box, `↓`/Enter walk down into the list, Esc clears.
 - Look: NAV field = `[ value  ]` dim brackets, focused row label bold
   accent. EDIT field = yellow background + cursor, footer shows
   `Enter commit · Esc revert`.
