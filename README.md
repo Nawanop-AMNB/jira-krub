@@ -95,5 +95,6 @@ curl -fsSL https://raw.githubusercontent.com/Nawanop-AMNB/jira-krub/main/install
 ```
 
 Downloads the prebuilt binary for macOS (Apple Silicon / Intel) or Linux
-(x86_64 / arm64) from the latest GitHub release into `~/.local/bin`.
+(x86_64 / arm64) from the latest GitHub release into `~/.local/bin`, plus a
+short alias `jrk`. `cargo install --path .` installs both names too.
 Releases are built by `.github/workflows/release.yml` on every `v*` tag.

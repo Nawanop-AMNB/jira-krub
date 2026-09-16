@@ -6,6 +6,15 @@ description = "Terminal UI for staging and batch-pushing Jira worklogs"
 repository = "https://github.com/Nawanop-AMNB/jira-krub"
 license = "MIT"
 
+[[bin]]
+name = "jira-krub"
+path = "src/main.rs"
+
+[[bin]]
+name = "jrk"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 anyhow = "1.0.104"
 chrono = { version = "0.4.45", features = ["serde"] }

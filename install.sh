@@ -10,6 +10,7 @@ set -eu
 
 REPO="Nawanop-AMNB/jira-krub"
 BIN="jira-krub"
+ALIAS="jrk"
 VERSION="${JIRA_KRUB_VERSION:-latest}"
 INSTALL_DIR="${JIRA_KRUB_INSTALL:-$HOME/.local/bin}"
 
@@ -48,7 +49,8 @@ tar -xzf "$tmp/$BIN.tar.gz" -C "$tmp"
 
 mkdir -p "$INSTALL_DIR"
 install -m 755 "$tmp/$BIN" "$INSTALL_DIR/$BIN"
-say "installed $INSTALL_DIR/$BIN ($("$INSTALL_DIR/$BIN" --version 2>/dev/null || echo "$VERSION"))"
+ln -sf "$BIN" "$INSTALL_DIR/$ALIAS"
+say "installed $INSTALL_DIR/$BIN ($("$INSTALL_DIR/$BIN" --version 2>/dev/null || echo "$VERSION")) · short alias: $ALIAS"
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
@@ -59,4 +61,4 @@ case ":$PATH:" in
     ;;
 esac
 say ""
-say "run:  $BIN   (first launch opens the setup screen)"
+say "run:  $BIN  or  $ALIAS   (first launch opens the setup screen)"
