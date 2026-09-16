@@ -83,3 +83,11 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, deps: Deps) -> Result<()>
 pub mod test_support;
 #[cfg(test)]
 mod reducer_tests;
+#[cfg(test)]
+mod key_binding_tests;
+#[cfg(test)]
+mod push_flow_tests;
+#[cfg(test)]
+mod day_view_tests;
+#[cfg(test)]
+mod entry_form_tests;

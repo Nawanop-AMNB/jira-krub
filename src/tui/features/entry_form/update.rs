@@ -76,7 +76,6 @@ fn open(m: &mut Model) {
     }
     m.snapshot();
     m.editing = true;
-    m.error = None;
     let f = m.focus;
     if let Some(t) = m.field_mut(f) {
         t.end();
@@ -155,6 +154,7 @@ pub fn update(app: &mut App, action: Action) {
                     if m.focus == Field::Save {
                         save(app);
                     } else {
+                        m.error = None;
                         open(m);
                     }
                 }
@@ -166,6 +166,7 @@ pub fn update(app: &mut App, action: Action) {
                     m.focus = if delta < 0 { m.focus.prev() } else { m.focus.next() };
                     // walk forward keeps typing until the Save button
                     if delta > 0 && m.focus != Field::Save {
+                        m.error = None;
                         open(m);
                     }
                 }
@@ -185,6 +186,7 @@ pub fn update(app: &mut App, action: Action) {
                 Focus(f) => {
                     m.editing = false;
                     m.focus = f;
+                    m.error = None;
                     open(m);
                 }
                 AcceptIssue => {

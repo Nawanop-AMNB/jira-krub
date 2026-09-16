@@ -405,3 +405,7 @@ mod adf_tests {
         assert_eq!(adf_text(&adf_doc(&lines)), lines.join("\n"));
     }
 }
+
+#[cfg(test)]
+#[path = "jira_http_requests_tests.rs"]
+mod requests_tests;

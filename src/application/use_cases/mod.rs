@@ -10,3 +10,5 @@ mod search_tests;
 mod sync_tests;
 #[cfg(test)]
 mod test_connection_tests;
+#[cfg(test)]
+mod sync_budget_tests;

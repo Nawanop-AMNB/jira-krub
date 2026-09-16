@@ -36,6 +36,8 @@ pub struct Script {
 pub struct Calls {
     pub myself: usize,
     pub jql: Vec<String>,
+    /// Account id each `search_issues_with_worklogs` asked to filter by.
+    pub search_account_ids: Vec<String>,
     pub get_issue: Vec<IssueKey>,
     /// (issue key, account id, window)
     pub my_worklogs: Vec<(IssueKey, String, Option<Window>)>,
@@ -100,7 +102,8 @@ impl JiraGateway for FakeGateway {
         }
     }
 
-    fn search_issues_with_worklogs(&self, jql: &str, max: usize, _account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
+        self.calls().search_account_ids.push(account_id.to_string());
         let issues = self.search_issues(jql, max)?;
         let s = self.script.lock().unwrap();
         Ok(issues

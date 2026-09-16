@@ -14,3 +14,5 @@ pub use worker::Worker;
 mod toml_config_tests;
 #[cfg(test)]
 mod toml_config_sections_tests;
+#[cfg(test)]
+mod json_state_states_tests;
