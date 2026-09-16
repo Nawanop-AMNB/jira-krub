@@ -32,8 +32,9 @@ connection) and the Year tab (`[` `]` pick year; target override, public
 holidays). `↑↓` walk fields, `Enter` toggles / edits, `^S` saves. Off days and
 holidays show as `off` and drop out of the weekly target.
 
-Key convention: `Tab` only ever switches tabs; `↑↓` and `Enter` walk fields
-everywhere else.
+Key convention: `Tab` only ever switches tabs. `↑↓` walk rows, `Enter` opens
+a field for typing (Esc reverts). Search boxes are the exception: they are
+the top row of their list, `↑` walks into them and typing filters at once.
 
 **Day view** — tickets on the left, prepare-logwork on the right.
 - Tickets: `/` search (local filter instantly, Jira search after 300 ms),
