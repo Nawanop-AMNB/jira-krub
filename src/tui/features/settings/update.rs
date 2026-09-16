@@ -1,4 +1,4 @@
-use super::model::{Action, GlobalField, HolidayEdit, HolidayRow, Model, Tab, YearField};
+use super::model::{Action, GlobalField, HolidayEdit, HolidayRow, Model, Tab, YearField, normalise_date};
 use crate::application::Config;
 use crate::application::config::{GlobalSettings, YearSettings};
 use crate::domain::{StartTime, Week, duration};
@@ -140,8 +140,8 @@ fn begin_holiday_edit(app: &mut App, index: usize) {
     let Some(m) = model(app) else { return };
     let Some(d) = m.current_year() else { return };
     let row = d.holidays.get(index).cloned().unwrap_or(HolidayRow { date: String::new(), name: String::new() });
-    let on_name = !row.date.trim().is_empty() && chrono::NaiveDate::parse_from_str(row.date.trim(), "%Y-%m-%d").is_ok();
-    m.holiday_edit = Some(HolidayEdit { index, date: TextInput::with(row.date), name: TextInput::with(row.name), on_name, error: None });
+    // Always walk date → name, even when editing an existing row.
+    m.holiday_edit = Some(HolidayEdit { index, date: TextInput::with(row.date), name: TextInput::with(row.name), on_name: false, error: None });
     m.y_focus = YearField::Holiday(index);
 }
 
@@ -150,7 +150,7 @@ fn commit_holiday(app: &mut App) -> bool {
     let cfg = app.config.clone();
     let Some(m) = model(app) else { return true };
     let Some(ed) = m.holiday_edit.clone() else { return true };
-    let row = HolidayRow { date: ed.date.text().trim().to_string(), name: ed.name.text().trim().to_string() };
+    let mut row = HolidayRow { date: ed.date.text().trim().to_string(), name: ed.name.text().trim().to_string() };
     if row.date.is_empty() && row.name.is_empty() {
         // empty new row → just drop it
         m.holiday_edit = None;
@@ -161,18 +161,11 @@ fn commit_holiday(app: &mut App) -> bool {
         }
         return true;
     }
-    match Model::holiday_from_row(&row) {
-        Some(h) if h.date.format("%Y").to_string() == m.year.to_string() => {}
-        Some(_) => {
+    match normalise_date(&row.date, m.year) {
+        Ok(date) => row.date = date.format("%Y-%m-%d").to_string(),
+        Err(e) => {
             if let Some(ed) = &mut m.holiday_edit {
-                ed.error = Some(format!("date must be in {}", m.year));
-                ed.on_name = false;
-            }
-            return false;
-        }
-        None => {
-            if let Some(ed) = &mut m.holiday_edit {
-                ed.error = Some("date must be YYYY-MM-DD".into());
+                ed.error = Some(e);
                 ed.on_name = false;
             }
             return false;
@@ -338,13 +331,14 @@ pub fn update(app: &mut App, action: Action) {
                         if ed.on_name {
                             commit_holiday(app);
                         } else {
-                            // date typed → validate lightly, then go to name
-                            let ok = chrono::NaiveDate::parse_from_str(ed.date.text().trim(), "%Y-%m-%d").is_ok();
-                            if ok {
-                                ed.on_name = true;
-                                ed.error = None;
-                            } else {
-                                ed.error = Some("date must be YYYY-MM-DD".into());
+                            // date typed → normalise, then go to name
+                            match normalise_date(ed.date.text(), m.year) {
+                                Ok(date) => {
+                                    ed.date.set(date.format("%Y-%m-%d").to_string());
+                                    ed.on_name = true;
+                                    ed.error = None;
+                                }
+                                Err(e) => ed.error = Some(e),
                             }
                         }
                         return;

@@ -209,7 +209,7 @@ fn draw_year(frame: &mut Frame, m: &Model, inner: Rect, mut y: u16, hits: &mut H
                 let date_rect = Rect { x, y, width: 11, height: 1 };
                 let name_rect = Rect { x: x + 12, y, width: row_w.saturating_sub(12), height: 1 };
                 let err = ed.error.is_some();
-                ed.date.render(frame, date_rect, if err { theme::editing_error() } else if ed.on_name { Style::new() } else { theme::editing() }, false, !ed.on_name, "YYYY-MM-DD");
+                ed.date.render(frame, date_rect, if err { theme::editing_error() } else if ed.on_name { Style::new() } else { theme::editing() }, false, !ed.on_name, "MM-DD");
                 ed.name.render(frame, name_rect, if ed.on_name { theme::editing() } else { Style::new() }, false, ed.on_name, "name");
                 if let Some(e) = &ed.error {
                     frame.render_widget(Paragraph::new(Span::styled(format!("✗ {e}"), theme::bad())), Rect { x, y: y + 1, width: row_w, height: 1 });

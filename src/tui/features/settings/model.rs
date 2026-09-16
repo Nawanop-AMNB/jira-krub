@@ -172,6 +172,53 @@ impl Model {
     }
 }
 
+/// Lenient date entry, normalised to `YYYY-MM-DD` for the given year:
+/// `2026-12-5`, `2026/12/05`, `12-5`, `12/05`, `1205`, `20261205`.
+/// Month/day are checked; a leading year, if given, must match `year`.
+pub fn normalise_date(input: &str, year: i32) -> Result<chrono::NaiveDate, String> {
+    let s = input.trim();
+    if s.is_empty() {
+        return Err("date is required".into());
+    }
+    let parts: Vec<&str> = s.split(['-', '/', '.', ' ']).filter(|p| !p.is_empty()).collect();
+    let (y, m, d): (i32, u32, u32) = match parts.as_slice() {
+        [y, m, d] => (y.parse().map_err(|_| "bad year")?, m.parse().map_err(|_| "bad month")?, d.parse().map_err(|_| "bad day")?),
+        [m, d] => (year, m.parse().map_err(|_| "bad month")?, d.parse().map_err(|_| "bad day")?),
+        [digits] if digits.chars().all(|c| c.is_ascii_digit()) => match digits.len() {
+            8 => (digits[..4].parse().unwrap(), digits[4..6].parse().unwrap(), digits[6..].parse().unwrap()),
+            4 => (year, digits[..2].parse().unwrap(), digits[2..].parse().unwrap()),
+            3 => (year, digits[..1].parse().unwrap(), digits[1..].parse().unwrap()),
+            _ => return Err("use YYYY-MM-DD or MM-DD".into()),
+        },
+        _ => return Err("use YYYY-MM-DD or MM-DD".into()),
+    };
+    if y != year {
+        return Err(format!("date must be in {year}"));
+    }
+    chrono::NaiveDate::from_ymd_opt(y, m, d).ok_or_else(|| format!("{m:02}-{d:02} is not a valid date"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalise_date;
+    #[test]
+    fn lenient_dates() {
+        let ok = |s: &str| normalise_date(s, 2026).unwrap().to_string();
+        assert_eq!(ok("2026-12-5"), "2026-12-05");
+        assert_eq!(ok("2026/12/05"), "2026-12-05");
+        assert_eq!(ok("12-5"), "2026-12-05");
+        assert_eq!(ok("12/05"), "2026-12-05");
+        assert_eq!(ok("1205"), "2026-12-05");
+        assert_eq!(ok("20261205"), "2026-12-05");
+        assert_eq!(ok("1-1"), "2026-01-01");
+        assert!(normalise_date("2025-12-05", 2026).is_err(), "wrong year");
+        assert!(normalise_date("13-01", 2026).is_err(), "bad month");
+        assert!(normalise_date("02-30", 2026).is_err(), "bad day");
+        assert!(normalise_date("", 2026).is_err());
+        assert!(normalise_date("abc", 2026).is_err());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     SwitchTab,

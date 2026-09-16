@@ -397,7 +397,7 @@ years with no config show defaults).
 | Field | Default | Effect |
 |-------|---------|--------|
 | Target hours / day (override) | blank = global | wins over global for that year |
-| Public holidays | none | list of `date · name`; add / edit / remove |
+| Public holidays | none | list of `date · name`; add / edit / remove. Enter walks date → name; dates accept `2026-12-5`, `12-5`, `12/05`, `1205` and are normalised to `YYYY-MM-DD` in the tab's year |
 
 Holiday semantics: a holiday (or non-workday) shows `off` dimmed instead
 of red `empty`, never needs hours, and drops out of the weekly target
