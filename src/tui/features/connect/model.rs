@@ -52,6 +52,10 @@ pub struct Model {
     pub had_config: bool,
     /// Opened from Settings → `Jira connection…`; Esc/Save return there.
     pub from_settings: bool,
+    /// EDIT mode: the focused field is open for typing.
+    pub editing: bool,
+    /// Value to restore on Esc.
+    pub backup: String,
 }
 
 impl Model {
@@ -76,6 +80,8 @@ impl Model {
             save_after_test: false,
             had_config: existing.is_some(),
             from_settings: false,
+            editing: false,
+            backup: String::new(),
         }
     }
 
@@ -114,8 +120,12 @@ pub enum Action {
     Home,
     End,
     ClearField,
-    /// Enter: test on fields/test button, save on save button, quit on quit.
+    /// Enter in NAV: open the focused field, or activate the focused button.
     Activate,
+    /// Commit the open field and move focus by delta (walk: +1 opens the next field).
+    Commit(i32),
+    /// Esc in EDIT: restore the field, back to NAV.
+    Revert,
     Test,
     Save,
     Quit,

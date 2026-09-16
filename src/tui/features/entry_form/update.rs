@@ -10,34 +10,51 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     use Action::*;
     let shift = key.modifiers.contains(KeyModifiers::SHIFT);
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    let a = match key.code {
-        KeyCode::Esc => Cancel,
-        KeyCode::Enter if m.focus == Field::Issue => AcceptIssue,
-        KeyCode::Enter => Save,
-        KeyCode::Char('s') if ctrl => Save,
-        KeyCode::Up => match m.focus {
-            Field::Issue => SuggestPrev,
-            Field::Start => StartStep(if shift { 60 } else { 15 }),
-            _ => FocusPrev,
-        },
-        KeyCode::Down => match m.focus {
-            Field::Issue => SuggestNext,
-            Field::Start => StartStep(if shift { -60 } else { -15 }),
-            _ => FocusNext,
-        },
-        KeyCode::Left if m.focus == Field::Date => DateShift(-1),
-        KeyCode::Right if m.focus == Field::Date => DateShift(1),
-        KeyCode::Left => Left,
-        KeyCode::Right => Right,
-        KeyCode::Home => Home,
-        KeyCode::End => End,
-        KeyCode::Backspace => Backspace,
-        KeyCode::Delete => Delete,
-        KeyCode::Char('h') if m.focus == Field::Date => DateShift(-1),
-        KeyCode::Char('l') if m.focus == Field::Date => DateShift(1),
-        KeyCode::Char('t') if m.focus == Field::Date => return Some(Global::Form(DateShift(i64::MIN))),
-        KeyCode::Char(c) if !ctrl => Char(c),
-        _ => return None,
+    if key.code == KeyCode::Char('s') && ctrl {
+        return Some(Global::Form(Save));
+    }
+    let a = if m.editing {
+        match key.code {
+            KeyCode::Esc => Revert,
+            KeyCode::Enter if m.focus == Field::Issue => AcceptIssue,
+            KeyCode::Enter => Commit(1),
+            // inside these fields ↑↓ have a field meaning; elsewhere they commit and move
+            KeyCode::Up => match m.focus {
+                Field::Issue => SuggestPrev,
+                Field::Start => StartStep(if shift { 60 } else { 15 }),
+                _ => Commit(-1),
+            },
+            KeyCode::Down => match m.focus {
+                Field::Issue => SuggestNext,
+                Field::Start => StartStep(if shift { -60 } else { -15 }),
+                _ => Commit(1),
+            },
+            KeyCode::Left if m.focus == Field::Date => DateShift(-1),
+            KeyCode::Right if m.focus == Field::Date => DateShift(1),
+            KeyCode::Left => Left,
+            KeyCode::Right => Right,
+            KeyCode::Home => Home,
+            KeyCode::End => End,
+            KeyCode::Backspace => Backspace,
+            KeyCode::Delete => Delete,
+            KeyCode::Char('h') if m.focus == Field::Date => DateShift(-1),
+            KeyCode::Char('l') if m.focus == Field::Date => DateShift(1),
+            KeyCode::Char('t') if m.focus == Field::Date => DateShift(i64::MIN),
+            KeyCode::Char(c) if !ctrl => Char(c),
+            _ => return None,
+        }
+    } else {
+        match key.code {
+            KeyCode::Esc => Cancel,
+            KeyCode::Enter => Open,
+            KeyCode::Up => FocusPrev,
+            KeyCode::Down => FocusNext,
+            // the date is the screen's unit: arrows shift it even in NAV
+            KeyCode::Left if m.focus == Field::Date => DateShift(-1),
+            KeyCode::Right if m.focus == Field::Date => DateShift(1),
+            KeyCode::Char('t') if m.focus == Field::Date => DateShift(i64::MIN),
+            _ => return None,
+        }
     };
     Some(Global::Form(a))
 }
@@ -49,6 +66,30 @@ fn model(app: &mut App) -> Option<&mut Model> {
     }
 }
 
+fn open(m: &mut Model) {
+    if m.focus == Field::Save {
+        return;
+    }
+    m.snapshot();
+    m.editing = true;
+    m.error = None;
+    let f = m.focus;
+    if let Some(t) = m.field_mut(f) {
+        t.end();
+    }
+}
+
+/// Validate the open field. Returns false (and sets the error) if it must stay open.
+fn field_ok(m: &mut Model) -> bool {
+    let err = match m.focus {
+        Field::Start if !m.start.is_empty() => StartTime::parse(m.start.text()).err().map(|e| format!("start: {e}")),
+        Field::Duration if !m.duration.is_empty() => duration::parse(m.duration.text()).err().map(|e| format!("duration: {e} — e.g. 1h30m, 90m")),
+        _ => None,
+    };
+    m.error = err;
+    m.error.is_none()
+}
+
 fn save(app: &mut App) {
     let default_start = app.default_start();
     let Some(m) = model(app) else { return };
@@ -56,6 +97,7 @@ fn save(app: &mut App) {
     let Some(key) = m.resolve_issue() else {
         m.error = Some("pick an issue (type part of a key or summary)".into());
         m.focus = Field::Issue;
+        open(m);
         return;
     };
     let start = if m.start.is_empty() {
@@ -66,6 +108,7 @@ fn save(app: &mut App) {
             Err(e) => {
                 m.error = Some(format!("start: {e}"));
                 m.focus = Field::Start;
+                open(m);
                 return;
             }
         }
@@ -75,6 +118,7 @@ fn save(app: &mut App) {
         Err(e) => {
             m.error = Some(format!("duration: {e} — e.g. 1h30m, 90m"));
             m.focus = Field::Duration;
+            open(m);
             return;
         }
     };
@@ -104,13 +148,48 @@ pub fn update(app: &mut App, action: Action) {
         other => {
             let Some(m) = model(app) else { return };
             match other {
+                Open => {
+                    if m.focus == Field::Save {
+                        save(app);
+                    } else {
+                        open(m);
+                    }
+                }
+                Commit(delta) => {
+                    if !field_ok(m) {
+                        return;
+                    }
+                    m.editing = false;
+                    m.focus = if delta < 0 { m.focus.prev() } else { m.focus.next() };
+                    // walk forward keeps typing until the Save button
+                    if delta > 0 && m.focus != Field::Save {
+                        open(m);
+                    }
+                }
+                Revert => {
+                    let backup = m.backup.clone();
+                    m.date = m.backup_date;
+                    let f = m.focus;
+                    if let Some(t) = m.field_mut(f) {
+                        t.set(backup);
+                    }
+                    m.editing = false;
+                    m.error = None;
+                }
                 FocusNext => m.focus = m.focus.next(),
                 FocusPrev => m.focus = m.focus.prev(),
-                Focus(f) => m.focus = f,
+                // click = focus and open (click is Enter)
+                Focus(f) => {
+                    m.editing = false;
+                    m.focus = f;
+                    open(m);
+                }
                 AcceptIssue => {
                     if let Some(key) = m.resolve_issue() {
                         m.issue.set(key.as_str().to_string());
+                        m.editing = false;
                         m.focus = Field::Duration;
+                        open(m);
                     } else {
                         m.error = Some("no matching issue".into());
                     }
@@ -146,6 +225,9 @@ pub fn update(app: &mut App, action: Action) {
                     m.error = None;
                 }
                 Paste(s) => {
+                    if !m.editing {
+                        open(m);
+                    }
                     let f = m.focus;
                     if let Some(t) = m.field_mut(f) {
                         t.insert_str(s.trim());

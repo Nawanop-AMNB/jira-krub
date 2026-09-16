@@ -10,38 +10,128 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     use Action::*;
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    let a = match key.code {
-        KeyCode::Tab | KeyCode::BackTab => SwitchTab,
-        KeyCode::Esc if m.holiday_edit.is_some() => CancelHolidayEdit,
-        KeyCode::Esc => Cancel,
-        KeyCode::Enter => Activate,
-        KeyCode::Char('s') if ctrl => Save,
-        KeyCode::Up => Up,
-        KeyCode::Down => Down,
-        // Year tab: arrows change the year unless a text cell is being typed in.
-        KeyCode::Left if m.tab == Tab::Year && !in_text(m) => PrevYear,
-        KeyCode::Right if m.tab == Tab::Year && !in_text(m) => NextYear,
-        KeyCode::Left => Left,
-        KeyCode::Right => Right,
-        KeyCode::Home => Home,
-        KeyCode::End => End,
-        KeyCode::Backspace => Backspace,
-        KeyCode::Delete => Delete,
-        KeyCode::Char('[') if m.tab == Tab::Year && !in_text(m) => PrevYear,
-        KeyCode::Char(']') if m.tab == Tab::Year && !in_text(m) => NextYear,
-        KeyCode::Char(' ') if !in_text(m) => Activate,
-        KeyCode::Char(c) if !ctrl => Char(c),
-        _ => return None,
+    if key.code == KeyCode::Char('s') && ctrl {
+        return Some(Global::Settings(Save));
+    }
+    let a = if m.holiday_edit.is_some() {
+        // holiday row walk: date → name
+        match key.code {
+            KeyCode::Tab | KeyCode::BackTab => SwitchTab,
+            KeyCode::Esc => CancelHolidayEdit,
+            KeyCode::Enter => Activate,
+            KeyCode::Up => Up,
+            KeyCode::Down => Down,
+            KeyCode::Left => Left,
+            KeyCode::Right => Right,
+            KeyCode::Home => Home,
+            KeyCode::End => End,
+            KeyCode::Backspace => Backspace,
+            KeyCode::Delete => Delete,
+            KeyCode::Char(c) if !ctrl => Char(c),
+            _ => return None,
+        }
+    } else if m.editing {
+        // one text field (or the workday chips) is open
+        let chips = m.tab == Tab::Global && m.g_focus == GlobalField::Workdays;
+        match key.code {
+            KeyCode::Tab | KeyCode::BackTab => SwitchTab,
+            KeyCode::Esc => Revert,
+            KeyCode::Enter => Commit,
+            // chips: Space toggles, Enter commits, Esc reverts
+            KeyCode::Char(' ') if chips => Activate,
+            KeyCode::Up => Up,
+            KeyCode::Down => Down,
+            KeyCode::Left => Left,
+            KeyCode::Right => Right,
+            KeyCode::Home => Home,
+            KeyCode::End => End,
+            KeyCode::Backspace => Backspace,
+            KeyCode::Delete => Delete,
+            KeyCode::Char(c) if !ctrl => Char(c),
+            _ => return None,
+        }
+    } else {
+        // NAV: letters are hotkeys, arrows navigate
+        match key.code {
+            KeyCode::Tab | KeyCode::BackTab => SwitchTab,
+            KeyCode::Esc => Cancel,
+            KeyCode::Enter | KeyCode::Char(' ') => Activate,
+            KeyCode::Up => Up,
+            KeyCode::Down => Down,
+            KeyCode::Left | KeyCode::Char('[') if m.tab == Tab::Year => PrevYear,
+            KeyCode::Right | KeyCode::Char(']') if m.tab == Tab::Year => NextYear,
+            KeyCode::Backspace | KeyCode::Delete if m.tab == Tab::Year => RemoveHoliday,
+            _ => return None,
+        }
     };
     Some(Global::Settings(a))
 }
 
-/// Typing goes into a text field right now (so letters must not be hotkeys).
-fn in_text(m: &Model) -> bool {
+/// Open the focused field for typing (text fields and the workday chips).
+fn open_field(app: &mut App) {
+    let cfg = app.config.clone();
+    let Some(m) = model(app) else { return };
     match m.tab {
-        Tab::Global => m.g_focus.is_text(),
-        Tab::Year => m.holiday_edit.is_some() || m.y_focus == YearField::Hours,
+        Tab::Global => {
+            if m.g_focus == GlobalField::Workdays {
+                m.backup_workdays = m.workdays;
+                m.editing = true;
+            } else if m.g_focus.is_text() {
+                m.backup = m.global_text_mut().map(|t| t.text().to_string()).unwrap_or_default();
+                if let Some(t) = m.global_text_mut() {
+                    t.end();
+                }
+                m.editing = true;
+            }
+        }
+        Tab::Year => {
+            if m.y_focus == YearField::Hours
+                && let Some(cfg) = &cfg
+            {
+                let backup = {
+                    let d = m.year_draft(cfg);
+                    d.hours.end();
+                    d.hours.text().to_string()
+                };
+                m.backup = backup;
+                m.editing = true;
+            }
+        }
     }
+    if m.editing {
+        m.error = None;
+    }
+}
+
+/// Close the open field, keeping its value (validation happens on Save).
+fn commit_field(m: &mut Model) {
+    if m.editing {
+        m.editing = false;
+        m.dirty = true;
+    }
+}
+
+fn revert_field(app: &mut App) {
+    let cfg = app.config.clone();
+    let Some(m) = model(app) else { return };
+    if !m.editing {
+        return;
+    }
+    let backup = m.backup.clone();
+    match m.tab {
+        Tab::Global if m.g_focus == GlobalField::Workdays => m.workdays = m.backup_workdays,
+        Tab::Global => {
+            if let Some(t) = m.global_text_mut() {
+                t.set(backup);
+            }
+        }
+        Tab::Year => {
+            if let Some(cfg) = &cfg {
+                m.year_draft(cfg).hours.set(backup);
+            }
+        }
+    }
+    m.editing = false;
 }
 
 fn model(app: &mut App) -> Option<&mut Model> {
@@ -196,11 +286,18 @@ pub fn update(app: &mut App, action: Action) {
             let today = app.today;
             app.go_week(Week::containing(today), today);
         }
+        Commit => {
+            if let Some(m) = model(app) {
+                commit_field(m);
+            }
+        }
+        Revert => revert_field(app),
         SwitchTab => {
             if !commit_holiday(app) {
                 return;
             }
             let Some(m) = model(app) else { return };
+            commit_field(m);
             m.tab = if m.tab == Tab::Global { Tab::Year } else { Tab::Global };
             m.error = None;
         }
@@ -209,23 +306,31 @@ pub fn update(app: &mut App, action: Action) {
                 return;
             }
             if let Some(m) = model(app) {
+                commit_field(m);
                 m.tab = t;
                 m.error = None;
             }
         }
+        // click = focus and open (click is Enter)
         FocusGlobal(f) => {
             if let Some(m) = model(app) {
+                commit_field(m);
                 m.tab = Tab::Global;
                 m.g_focus = f;
             }
+            open_field(app);
         }
         FocusYear(f) => {
             if !commit_holiday(app) {
                 return;
             }
             if let Some(m) = model(app) {
+                commit_field(m);
                 m.tab = Tab::Year;
                 m.y_focus = f;
+            }
+            if f == YearField::Hours {
+                open_field(app);
             }
         }
         PrevYear | NextYear => {
@@ -234,6 +339,7 @@ pub fn update(app: &mut App, action: Action) {
             }
             let Some(cfg) = cfg else { return };
             let Some(m) = model(app) else { return };
+            commit_field(m);
             m.year += if matches!(action, PrevYear) { -1 } else { 1 };
             m.year_draft(&cfg);
             // keep the cursor where it was so repeated ←/→ keep stepping years
@@ -248,6 +354,7 @@ pub fn update(app: &mut App, action: Action) {
                 return;
             }
             let Some(m) = model(app) else { return };
+            commit_field(m);
             match m.tab {
                 Tab::Global => {
                     let i = GlobalField::ORDER.iter().position(|f| *f == m.g_focus).unwrap_or(0) as i32;
@@ -267,7 +374,9 @@ pub fn update(app: &mut App, action: Action) {
             let Some(m) = model(app) else { return };
             match m.tab {
                 Tab::Global if m.g_focus == GlobalField::Workdays => {
-                    m.workday_cursor = (m.workday_cursor as i32 + delta).rem_euclid(7) as usize;
+                    if m.editing {
+                        m.workday_cursor = (m.workday_cursor as i32 + delta).rem_euclid(7) as usize;
+                    }
                 }
                 Tab::Global => {
                     if let Some(t) = m.global_text_mut() {
@@ -306,8 +415,12 @@ pub fn update(app: &mut App, action: Action) {
             match m.tab {
                 Tab::Global => match m.g_focus {
                     GlobalField::Workdays => {
-                        m.workdays[m.workday_cursor] = !m.workdays[m.workday_cursor];
-                        m.dirty = true;
+                        if m.editing {
+                            m.workdays[m.workday_cursor] = !m.workdays[m.workday_cursor];
+                            m.dirty = true;
+                        } else {
+                            open_field(app);
+                        }
                     }
                     GlobalField::AutoWatch => {
                         m.auto_watch = !m.auto_watch;
@@ -322,8 +435,11 @@ pub fn update(app: &mut App, action: Action) {
                     GlobalField::Save => save(app),
                     GlobalField::Cancel => cancel(app),
                     _ => {
-                        // Enter on a text field = move on, like a form
-                        update(app, Down);
+                        if m.editing {
+                            commit_field(m);
+                        } else {
+                            open_field(app);
+                        }
                     }
                 },
                 Tab::Year => {
@@ -344,7 +460,13 @@ pub fn update(app: &mut App, action: Action) {
                         return;
                     }
                     match m.y_focus {
-                        YearField::Hours => update(app, Down),
+                        YearField::Hours => {
+                            if m.editing {
+                                commit_field(m);
+                            } else {
+                                open_field(app);
+                            }
+                        }
                         YearField::Holiday(i) => begin_holiday_edit(app, i),
                         YearField::AddHoliday => {
                             let Some(cfg) = cfg else { return };

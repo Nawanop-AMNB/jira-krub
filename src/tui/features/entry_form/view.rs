@@ -14,7 +14,9 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 const LABEL_W: u16 = 12;
 
 pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitRegistry) -> Vec<Hint> {
-    let suggestions = if m.focus == Field::Issue { m.suggestions() } else { Vec::new() };
+    let ed = |f: Field| m.focus == f && m.editing;
+    let sty = |f: Field| if ed(f) { theme::editing() } else { Style::new() };
+    let suggestions = if ed(Field::Issue) { m.suggestions() } else { Vec::new() };
     let height = (14 + suggestions.len() as u16).min(body.height);
     let area = centered(64.min(body.width), height, body);
     frame.render_widget(Clear, area);
@@ -29,7 +31,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
 
     // Issue
     label(frame, inner, y, "Issue", m.focus == Field::Issue);
-    m.issue.render(frame, Rect { x: fx, y, width: w.min(14), height: 1 }, Style::new(), false, m.focus == Field::Issue, "key or text");
+    m.issue.render(frame, Rect { x: fx, y, width: w.min(14), height: 1 }, sty(Field::Issue), false, ed(Field::Issue), "key or text");
     hits.click(Rect { x: fx, y, width: w, height: 1 }, Global::Form(Action::Focus(Field::Issue)));
     if let Some(s) = m.issue_summary() {
         let sx = fx + 15;
@@ -49,7 +51,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     // Date
     label(frame, inner, y, "Date", m.focus == Field::Date);
     let date_txt = m.date.format("%a %d %b %Y").to_string();
-    let date_style = if m.focus == Field::Date { theme::accent() } else { Style::new() };
+    let date_style = if ed(Field::Date) { theme::editing() } else if m.focus == Field::Date { theme::accent() } else { Style::new() };
     frame.render_widget(Paragraph::new(Span::styled(&date_txt, date_style)), Rect { x: fx, y, width: 16, height: 1 });
     hits.click(Rect { x: fx, y, width: 16, height: 1 }, Global::Form(Action::Focus(Field::Date)));
     arrows(frame, hits, fx + 18, y, ("◀", "▶"), (Global::Form(Action::DateShift(-1)), Global::Form(Action::DateShift(1))));
@@ -57,7 +59,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
 
     // Start
     label(frame, inner, y, "Start", m.focus == Field::Start);
-    m.start.render(frame, Rect { x: fx, y, width: 6, height: 1 }, Style::new(), false, m.focus == Field::Start, "09:00");
+    m.start.render(frame, Rect { x: fx, y, width: 6, height: 1 }, sty(Field::Start), false, ed(Field::Start), "09:00");
     hits.click(Rect { x: fx, y, width: 6, height: 1 }, Global::Form(Action::Focus(Field::Start)));
     arrows(frame, hits, fx + 8, y, ("▲", "▼"), (Global::Form(Action::StartStep(15)), Global::Form(Action::StartStep(-15))));
     frame.render_widget(Paragraph::new(Span::styled("15m", theme::dim())), Rect { x: fx + 12, y, width: 3, height: 1 });
@@ -65,20 +67,20 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
 
     // Duration
     label(frame, inner, y, "Duration", m.focus == Field::Duration);
-    m.duration.render(frame, Rect { x: fx, y, width: 12, height: 1 }, Style::new(), false, m.focus == Field::Duration, "1h30m");
+    m.duration.render(frame, Rect { x: fx, y, width: 12, height: 1 }, sty(Field::Duration), false, ed(Field::Duration), "1h30m");
     hits.click(Rect { x: fx, y, width: 12, height: 1 }, Global::Form(Action::Focus(Field::Duration)));
     frame.render_widget(Paragraph::new(Span::styled("e.g. 2h · 1h30m · 90m", theme::dim())), Rect { x: fx + 14, y, width: w.saturating_sub(14), height: 1 });
     y += 1;
 
     // Title
     label(frame, inner, y, "Descr.", m.focus == Field::Title);
-    m.title.render(frame, Rect { x: fx, y, width: w, height: 1 }, Style::new(), false, m.focus == Field::Title, "what you did");
+    m.title.render(frame, Rect { x: fx, y, width: w, height: 1 }, sty(Field::Title), false, ed(Field::Title), "what you did");
     hits.click(Rect { x: fx, y, width: w, height: 1 }, Global::Form(Action::Focus(Field::Title)));
     y += 1;
 
     // Detail
     label(frame, inner, y, "Detail", m.focus == Field::Detail);
-    m.detail.render(frame, Rect { x: fx, y, width: w, height: 1 }, Style::new(), false, m.focus == Field::Detail, "optional");
+    m.detail.render(frame, Rect { x: fx, y, width: w, height: 1 }, sty(Field::Detail), false, ed(Field::Detail), "optional");
     hits.click(Rect { x: fx, y, width: w, height: 1 }, Global::Form(Action::Focus(Field::Detail)));
     y += 2;
 
@@ -112,14 +114,23 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     y += 1;
 
     let bx = inner.x + inner.width.saturating_sub(24);
-    let used = button(frame, bx, y, "Save", false, Global::Form(Action::Save), hits);
+    let used = button(frame, bx, y, "Save", m.focus == Field::Save, Global::Form(Action::Save), hits);
     button(frame, bx + used + 2, y, "Cancel", false, Global::Form(Action::Cancel), hits);
 
-    vec![
-        Hint::new("↑↓", "field", Global::Form(Action::FocusNext)),
-        Hint::new("Enter", "save", Global::Form(Action::Save)),
-        Hint::new("Esc", "cancel", Global::Form(Action::Cancel)),
-    ]
+    if m.editing {
+        vec![
+            Hint::new("Enter", "next field", Global::Form(Action::Commit(1))),
+            Hint::new("^S", "save", Global::Form(Action::Save)),
+            Hint::new("Esc", "revert", Global::Form(Action::Revert)),
+        ]
+    } else {
+        vec![
+            Hint::new("↑↓", "field", Global::Form(Action::FocusNext)),
+            Hint::new("Enter", "edit / save", Global::Form(Action::Open)),
+            Hint::new("^S", "save", Global::Form(Action::Save)),
+            Hint::new("Esc", "cancel", Global::Form(Action::Cancel)),
+        ]
+    }
 }
 
 fn label(frame: &mut Frame, inner: Rect, y: u16, text: &str, focused: bool) {

@@ -106,6 +106,11 @@ pub struct Model {
     pub error: Option<String>,
     /// Lookback at open, to know whether a save needs a re-sync.
     pub initial_lookback: u32,
+    /// EDIT mode: the focused text field (or the workday chips) is open.
+    pub editing: bool,
+    /// Value to restore on Esc.
+    pub backup: String,
+    pub backup_workdays: [bool; 7],
 }
 
 impl Model {
@@ -128,6 +133,9 @@ impl Model {
             dirty: false,
             error: None,
             initial_lookback: g.lookback_weeks,
+            editing: false,
+            backup: String::new(),
+            backup_workdays: g.workdays,
         };
         m.years.push(YearDraft::from_settings(year, &cfg.year(year)));
         m
@@ -243,6 +251,10 @@ pub enum Action {
     RemoveHoliday,
     /// Esc inside a holiday row: drop that edit only.
     CancelHolidayEdit,
+    /// Commit the open field, back to NAV.
+    Commit,
+    /// Esc in EDIT: restore the field, back to NAV.
+    Revert,
     Save,
     Cancel,
     /// Cancel confirmed although there are unsaved edits.

@@ -10,25 +10,48 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     use Action::*;
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    let a = match key.code {
-        KeyCode::Esc => Quit,
-        KeyCode::Down => FocusNext,
-        KeyCode::Up => FocusPrev,
-        KeyCode::Enter => Activate,
-        KeyCode::Char('u') if ctrl => ClearField,
-        KeyCode::Backspace => Backspace,
-        KeyCode::Delete => Delete,
-        KeyCode::Left if m.focus.is_field() => Left,
-        KeyCode::Right if m.focus.is_field() => Right,
-        KeyCode::Left => FocusPrev,
-        KeyCode::Right => FocusNext,
-        KeyCode::Home => Home,
-        KeyCode::End => End,
-        KeyCode::Char(c) if m.focus.is_field() && !ctrl => Char(c),
-        KeyCode::Char('q') => Quit,
-        _ => return None,
+    let a = if m.editing {
+        match key.code {
+            KeyCode::Esc => Revert,
+            KeyCode::Enter => Commit(1),
+            KeyCode::Down => Commit(1),
+            KeyCode::Up => Commit(-1),
+            KeyCode::Char('u') if ctrl => ClearField,
+            KeyCode::Backspace => Backspace,
+            KeyCode::Delete => Delete,
+            KeyCode::Left => Left,
+            KeyCode::Right => Right,
+            KeyCode::Home => Home,
+            KeyCode::End => End,
+            KeyCode::Char(c) if !ctrl => Char(c),
+            _ => return None,
+        }
+    } else {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => Quit,
+            KeyCode::Down | KeyCode::Right => FocusNext,
+            KeyCode::Up | KeyCode::Left => FocusPrev,
+            KeyCode::Enter => Activate,
+            _ => return None,
+        }
     };
     Some(Global::Connect(a))
+}
+
+/// Open the focused field for typing (no-op on buttons).
+fn open_field(m: &mut Model) {
+    if !m.focus.is_field() {
+        return;
+    }
+    m.backup = match m.focus {
+        F::Site => m.site.text().to_string(),
+        F::Email => m.email.text().to_string(),
+        _ => m.token.text().to_string(),
+    };
+    m.editing = true;
+    if let Some(f) = m.field_mut() {
+        f.end();
+    }
 }
 
 fn model(app: &mut App) -> Option<&mut Model> {
@@ -189,16 +212,47 @@ pub fn update(app: &mut App, action: Action) {
             match focus {
                 Some(F::SaveBtn) => save(app),
                 Some(F::QuitBtn) => update(app, Quit),
-                Some(_) => start_test(app),
+                Some(F::TestBtn) => start_test(app),
+                Some(_) => {
+                    if let Some(m) = model(app) {
+                        open_field(m);
+                    }
+                }
                 None => {}
             }
+        }
+        Commit(delta) => {
+            let Some(m) = model(app) else { return };
+            m.editing = false;
+            m.focus = if delta < 0 { m.focus.prev() } else { m.focus.next() };
+            // walking forward through the fields keeps typing; buttons stop the walk
+            if delta > 0 && m.focus.is_field() {
+                open_field(m);
+            }
+        }
+        Revert => {
+            let Some(m) = model(app) else { return };
+            let backup = m.backup.clone();
+            let was_kept = m.kept_token.is_some() && m.focus == F::Token && backup.is_empty();
+            if let Some(f) = m.field_mut() {
+                f.set(backup);
+            }
+            if was_kept {
+                m.token_kept = true;
+            }
+            m.editing = false;
         }
         other => {
             let Some(m) = model(app) else { return };
             match other {
                 FocusNext => m.focus = m.focus.next(),
                 FocusPrev => m.focus = m.focus.prev(),
-                Focus(f) => m.focus = f,
+                // click = focus and open (click is Enter)
+                Focus(f) => {
+                    m.editing = false;
+                    m.focus = f;
+                    open_field(m);
+                }
                 ClearField => {
                     if m.focus == self::F::Token {
                         m.token_kept = false;
@@ -217,6 +271,9 @@ pub fn update(app: &mut App, action: Action) {
                     m.test = TestState::Idle;
                 }
                 Paste(s) => {
+                    if !m.editing {
+                        open_field(m);
+                    }
                     if m.focus == self::F::Token {
                         m.token_kept = false;
                     }
@@ -258,7 +315,7 @@ pub fn update(app: &mut App, action: Action) {
                         f.end();
                     }
                 }
-                Quit | Test | Save | Activate => {}
+                Quit | Test | Save | Activate | Commit(_) | Revert => {}
             }
         }
     }

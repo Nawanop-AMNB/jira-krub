@@ -73,13 +73,21 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     let used = button(frame, bx, by, "Save", save_f, Global::Settings(Action::Save), hits);
     button(frame, bx + used + 2, by, "Cancel", cancel_f, Global::Settings(Action::Cancel), hits);
 
-    vec![
-        Hint::new("Tab", "switch tab", Global::Settings(Action::SwitchTab)),
-        Hint::new("↑↓", "field", Global::Settings(Action::Down)),
-        Hint::new("Enter", "toggle / edit", Global::Settings(Action::Activate)),
-        Hint::new("^S", "save", Global::Settings(Action::Save)),
-        Hint::new("Esc", "back", Global::Settings(Action::Cancel)),
-    ]
+    if m.editing || m.holiday_edit.is_some() {
+        vec![
+            Hint::new("Enter", "commit", Global::Settings(Action::Activate)),
+            Hint::new("Esc", "revert", Global::Settings(Action::Revert)),
+            Hint::new("^S", "save", Global::Settings(Action::Save)),
+        ]
+    } else {
+        vec![
+            Hint::new("Tab", "switch tab", Global::Settings(Action::SwitchTab)),
+            Hint::new("↑↓", "field", Global::Settings(Action::Down)),
+            Hint::new("Enter", "edit / toggle", Global::Settings(Action::Activate)),
+            Hint::new("^S", "save", Global::Settings(Action::Save)),
+            Hint::new("Esc", "back", Global::Settings(Action::Cancel)),
+        ]
+    }
 }
 
 fn label(frame: &mut Frame, inner: Rect, y: u16, text: &str, focused: bool) {
@@ -109,11 +117,12 @@ fn hint_at(frame: &mut Frame, inner: Rect, y: u16, text: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn text_row(frame: &mut Frame, hits: &mut HitRegistry, inner: Rect, y: u16, name: &str, input: &TextInput, focused: bool, hint: &str, action: Global) {
+fn text_row(frame: &mut Frame, hits: &mut HitRegistry, inner: Rect, y: u16, name: &str, input: &TextInput, (focused, editing): (bool, bool), hint: &str, action: Global) {
     label(frame, inner, y, name, focused);
     let rect = value_box(frame, inner, y, focused);
     let inner_rect = Rect { x: rect.x + 1, y, width: rect.width - 1, height: 1 };
-    input.render(frame, inner_rect, Style::new(), false, focused, "");
+    let open = focused && editing;
+    input.render(frame, inner_rect, if open { theme::editing() } else { Style::new() }, false, open, "");
     hits.click(Rect { x: rect.x - 1, y, width: BOX_W, height: 1 }, action);
     hint_at(frame, inner, y, hint);
 }
@@ -131,7 +140,8 @@ fn toggle_row(frame: &mut Frame, hits: &mut HitRegistry, inner: Rect, y: u16, na
 
 fn draw_global(frame: &mut Frame, app: &App, m: &Model, inner: Rect, mut y: u16, hits: &mut HitRegistry) -> u16 {
     let f = m.g_focus;
-    text_row(frame, hits, inner, y, "Target hours / day", &m.hours, f == GlobalField::Hours, "1–24", Global::Settings(Action::FocusGlobal(GlobalField::Hours)));
+    let ed = m.editing;
+    text_row(frame, hits, inner, y, "Target hours / day", &m.hours, (f == GlobalField::Hours, ed), "1–24", Global::Settings(Action::FocusGlobal(GlobalField::Hours)));
     y += 1;
 
     // workdays: seven chips, on = bright, off = dim, cursor = reversed
@@ -141,7 +151,7 @@ fn draw_global(frame: &mut Frame, app: &App, m: &Model, inner: Rect, mut y: u16,
     for (i, name) in DAY_NAMES.iter().enumerate() {
         let on = m.workdays[i];
         let mut style = if on { Style::new().fg(Color::Green).add_modifier(Modifier::BOLD) } else { theme::dim() };
-        if wf && m.workday_cursor == i {
+        if wf && ed && m.workday_cursor == i {
             style = style.add_modifier(Modifier::REVERSED);
         }
         let text = format!(" {name} ");
@@ -154,17 +164,17 @@ fn draw_global(frame: &mut Frame, app: &App, m: &Model, inner: Rect, mut y: u16,
         }
     }
     if wf {
-        let hint = "←→ · Enter toggles";
+        let hint = if ed { "←→ pick · Space toggles · Enter done" } else { "Enter to edit" };
         let hx = x + 2;
         frame.render_widget(Paragraph::new(Span::styled(hint, theme::dim())), Rect { x: hx, y, width: (inner.x + inner.width).saturating_sub(hx + PAD), height: 1 });
     }
     y += 1;
 
-    text_row(frame, hits, inner, y, "Default start time", &m.start, f == GlobalField::Start, "HH:MM", Global::Settings(Action::FocusGlobal(GlobalField::Start)));
+    text_row(frame, hits, inner, y, "Default start time", &m.start, (f == GlobalField::Start, ed), "HH:MM", Global::Settings(Action::FocusGlobal(GlobalField::Start)));
     y += 1;
-    text_row(frame, hits, inner, y, "Quick-stage duration", &m.quick_stage, f == GlobalField::QuickStage, "e.g. 1h, 30m", Global::Settings(Action::FocusGlobal(GlobalField::QuickStage)));
+    text_row(frame, hits, inner, y, "Quick-stage duration", &m.quick_stage, (f == GlobalField::QuickStage, ed), "e.g. 1h, 30m", Global::Settings(Action::FocusGlobal(GlobalField::QuickStage)));
     y += 1;
-    text_row(frame, hits, inner, y, "History lookback", &m.lookback, f == GlobalField::Lookback, "weeks · change re-syncs", Global::Settings(Action::FocusGlobal(GlobalField::Lookback)));
+    text_row(frame, hits, inner, y, "History lookback", &m.lookback, (f == GlobalField::Lookback, ed), "weeks · change re-syncs", Global::Settings(Action::FocusGlobal(GlobalField::Lookback)));
     y += 1;
     toggle_row(frame, hits, inner, y, "Auto-watch from search", m.auto_watch, f == GlobalField::AutoWatch, "Enter toggles", Global::Settings(Action::FocusGlobal(GlobalField::AutoWatch)));
     y += 2;
@@ -188,7 +198,7 @@ fn draw_global(frame: &mut Frame, app: &App, m: &Model, inner: Rect, mut y: u16,
 fn draw_year(frame: &mut Frame, m: &Model, inner: Rect, mut y: u16, hits: &mut HitRegistry) -> u16 {
     let f = m.y_focus;
     let Some(d) = m.current_year() else { return y };
-    text_row(frame, hits, inner, y, "Target hours / day", &d.hours, f == YearField::Hours && m.holiday_edit.is_none(), "blank = global", Global::Settings(Action::FocusYear(YearField::Hours)));
+    text_row(frame, hits, inner, y, "Target hours / day", &d.hours, (f == YearField::Hours && m.holiday_edit.is_none(), m.editing), "blank = global", Global::Settings(Action::FocusYear(YearField::Hours)));
     y += 1;
 
     label(frame, inner, y, "Public holidays", matches!(f, YearField::Holiday(_)));

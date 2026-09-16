@@ -1,6 +1,6 @@
 # jira-krub — Product Spec
 
-**Status:** draft v0.8 · 2026-09-15
+**Status:** draft v0.9 · 2026-09-15
 **Owner:** ka.nawanop (sole user)
 **Target:** Jira Cloud (`*.atlassian.net`), native worklog dialog (no Tempo)
 
@@ -338,13 +338,34 @@ Ordered by priority.
 - Keyboard remains complete; the mouse never has an action the keyboard lacks.
 - Note: with capture on, native text selection needs Shift+drag.
 
-**R9a. Key conventions, app-wide**
-- `Tab` = switch tab content on screens that have tabs (Settings). It never
-  walks fields or cells anywhere. Screens without tabs ignore it.
-- `↑`/`↓` walk fields; `Enter` activates / commits and moves on; `←`/`→`
-  move the text cursor inside a field (and switch pane in the day view).
-- `[` `]` step the "unit" of the screen: day in the day view, year in
-  Settings.
+**R9a. Key conventions, app-wide — NAV and EDIT**
+
+Every screen is in one of two modes. **NAV** is the default; **EDIT** means
+exactly one field is open for typing.
+
+| Key | NAV | EDIT |
+|-----|-----|------|
+| `↑` `↓` | move focus between rows | commit the field, then move focus |
+| `←` `→` | screen-level: pane (day view), year (Settings), week (main) | move the cursor inside the text |
+| `Enter` | open the focused field; toggle a checkbox / chip; activate a button | commit. On a *walk* form open the next field; otherwise back to NAV |
+| `Esc` | one step back (R9b) | revert the field, back to NAV |
+| letters, Space | screen hotkeys (`q` `w` `s` `d` `n` `/` `,` …) | typed into the field |
+| `Tab` | switch tab (Settings) | commit, then switch tab |
+| `[` `]` | step the unit: day (day view), year (Settings) | typed |
+
+- **Walk forms** — Enter commits and opens the next field: Connect,
+  log-work popup, holiday row, prepare-pane row.
+- **Non-walk** — Enter commits and returns to NAV: Settings Global/Year
+  text fields. The workdays chip row opens the same way: `←`/`→` pick,
+  Space toggles, Enter commits, Esc reverts.
+- A walk form (Connect, popup) opens with its first field already in EDIT.
+- **Search boxes are the exception**: `/` (or click) opens them and typing
+  filters immediately; `↓`/Enter leave to the list, Esc clears. They are
+  never reached by `↑`/`↓` focus walking, so the rule never collides.
+- Look: NAV field = `[ value  ]` dim brackets, focused row label bold
+  accent. EDIT field = yellow background + cursor, footer shows
+  `Enter commit · Esc revert`.
+- `Tab` never walks fields or cells anywhere.
 
 **R9b. Esc = step back, everywhere**
 

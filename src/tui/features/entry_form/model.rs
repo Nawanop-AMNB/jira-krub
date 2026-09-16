@@ -10,10 +10,12 @@ pub enum Field {
     Duration,
     Title,
     Detail,
+    /// The Save button: end of the walk.
+    Save,
 }
 
 impl Field {
-    pub const ORDER: [Field; 6] = [Field::Issue, Field::Date, Field::Start, Field::Duration, Field::Title, Field::Detail];
+    pub const ORDER: [Field; 7] = [Field::Issue, Field::Date, Field::Start, Field::Duration, Field::Title, Field::Detail, Field::Save];
     pub fn next(self) -> Self {
         let i = Self::ORDER.iter().position(|f| *f == self).unwrap_or(0);
         Self::ORDER[(i + 1) % Self::ORDER.len()]
@@ -39,6 +41,11 @@ pub struct Model {
     /// Issues to suggest from (local: watchlist + mine + history).
     pub candidates: Vec<Issue>,
     pub suggestion_sel: usize,
+    /// EDIT mode: the focused field is open for typing.
+    pub editing: bool,
+    /// Value to restore on Esc (text, or date for the Date field).
+    pub backup: String,
+    pub backup_date: NaiveDate,
 }
 
 impl Model {
@@ -55,6 +62,10 @@ impl Model {
             error: None,
             candidates,
             suggestion_sel: 0,
+            // A walk form starts with its first field open.
+            editing: true,
+            backup: String::new(),
+            backup_date: date,
         }
     }
 
@@ -65,8 +76,15 @@ impl Model {
             Field::Duration => Some(&mut self.duration),
             Field::Title => Some(&mut self.title),
             Field::Detail => Some(&mut self.detail),
-            Field::Date => None,
+            Field::Date | Field::Save => None,
         }
+    }
+
+    /// Snapshot the focused field so Esc can restore it.
+    pub fn snapshot(&mut self) {
+        self.backup_date = self.date;
+        let f = self.focus;
+        self.backup = self.field_mut(f).map(|t| t.text().to_string()).unwrap_or_default();
     }
 
     /// Candidates matching the typed issue text, unless it already equals a key.
@@ -120,6 +138,12 @@ pub enum Action {
     SuggestPrev,
     /// Enter on the issue field: accept suggestion and move on.
     AcceptIssue,
+    /// Enter in NAV: open the focused field (or Save on the button).
+    Open,
+    /// Commit the open field; +1 walks to the next field, -1 back.
+    Commit(i32),
+    /// Esc in EDIT: restore the field, back to NAV.
+    Revert,
     Save,
     Cancel,
 }

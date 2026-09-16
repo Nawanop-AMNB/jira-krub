@@ -26,12 +26,13 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         y += 1;
     }
 
-    y = field(frame, hits, inner, y, "Jira site", &m.site, m.focus == Focus::Site, Focus::Site, false, "https://company.atlassian.net", m.site_err.as_deref());
+    let ed = m.editing;
+    y = field(frame, hits, inner, y, "Jira site", &m.site, (m.focus == Focus::Site, ed), Focus::Site, false, "https://company.atlassian.net", m.site_err.as_deref());
     hint_line(frame, inner, y, "e.g. https://company.atlassian.net");
     y += 1;
-    y = field(frame, hits, inner, y, "Email", &m.email, m.focus == Focus::Email, Focus::Email, false, "you@company.com", m.email_err.as_deref());
+    y = field(frame, hits, inner, y, "Email", &m.email, (m.focus == Focus::Email, ed), Focus::Email, false, "you@company.com", m.email_err.as_deref());
     let token_placeholder = if m.token_kept { "•••••••••••••••• (kept, type to replace)" } else { "paste token" };
-    y = field(frame, hits, inner, y, "API token", &m.token, m.focus == Focus::Token, Focus::Token, true, token_placeholder, m.token_err.as_deref());
+    y = field(frame, hits, inner, y, "API token", &m.token, (m.focus == Focus::Token, ed), Focus::Token, true, token_placeholder, m.token_err.as_deref());
     hint_line(frame, inner, y, TOKEN_URL);
     y += 2;
 
@@ -54,9 +55,15 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         hint_line(frame, inner, y, &format!("saved to {} (mode 600)", app.deps.config_store.location()));
     }
 
+    if m.editing {
+        return vec![
+            Hint::new("Enter", "next field", Global::Connect(Action::Commit(1))),
+            Hint::new("Esc", "revert", Global::Connect(Action::Revert)),
+        ];
+    }
     vec![
         Hint::new("↑↓", "field", Global::Connect(Action::FocusNext)),
-        Hint::new("Enter", "test / save", Global::Connect(Action::Activate)),
+        Hint::new("Enter", "edit / activate", Global::Connect(Action::Activate)),
         Hint::new("Esc", if app.gateway.is_some() { "back" } else { "quit" }, Global::Connect(Action::Quit)),
     ]
 }
@@ -69,7 +76,7 @@ fn field(
     y: u16,
     label: &str,
     input: &TextInput,
-    focused: bool,
+    (focused, editing): (bool, bool),
     focus: Focus,
     masked: bool,
     placeholder: &str,
@@ -85,8 +92,9 @@ fn field(
     let box_rect = Rect { x: inner.x + label_w, y, width: box_w, height: 1 };
     frame.render_widget(Paragraph::new("["), Rect { x: box_rect.x - 1, y, width: 1, height: 1 });
     frame.render_widget(Paragraph::new("]"), Rect { x: box_rect.x + box_w, y, width: 1, height: 1 });
-    let style = if err.is_some() { theme::bad() } else { ratatui::style::Style::new() };
-    input.render(frame, box_rect, style, masked, focused, placeholder);
+    let open = focused && editing;
+    let style = if err.is_some() { theme::bad() } else if open { theme::editing() } else { ratatui::style::Style::new() };
+    input.render(frame, box_rect, style, masked, open, placeholder);
     hits.add(HitArea {
         rect: box_rect,
         click: Some(Global::Connect(Action::Focus(focus))),
