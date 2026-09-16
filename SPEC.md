@@ -1,6 +1,6 @@
 # jira-krub — Product Spec
 
-**Status:** draft v0.6 · 2026-09-15
+**Status:** draft v0.7 · 2026-09-15
 **Owner:** ka.nawanop (sole user)
 **Target:** Jira Cloud (`*.atlassian.net`), native worklog dialog (no Tempo)
 
@@ -222,6 +222,20 @@ Ordered by priority.
     edit → row becomes `~ edited` and moves up to pending; Backspace marks
     `✗ delete` (Backspace again undoes). Nothing touches Jira until `p`.
     A Jira worklog cannot change ticket or date (delete + re-add).
+  - **Row order is stable while editing.** Rows sort by start time, but a
+    row being walked with Enter stays where it is until the walk ends
+    (Enter after description, Esc, or focus leaving the row). Only then does
+    the list re-sort and the cursor follows the row to its new place.
+    Rationale: re-sorting mid-walk moved the row under the cursor, so the
+    user could not tell whether the next cell belonged to the same entry.
+    - AC: rows `09:30 ticket-1` (cursor) and `09:00 ticket-2`. Set start of
+      ticket-1 to `08:00`, Enter → duration cell is still on ticket-1 and
+      ticket-1 is still the first row. Finish the walk → ticket-1 sorts
+      above ticket-2 and the cursor is on it.
+    - AC: same, but Esc after changing the start → value reverted, no
+      re-sort.
+    - AC: change the start, then click another row → start is saved, list
+      re-sorts, cursor lands on the clicked row.
   - Inline edit on the highlighted row (cell becomes an editor, no modal):
     `s` start (type `HH:MM` or `HHMM`, or `↑/↓` step 15 min, `Shift+↑/↓`
     step 1 h) · `d` duration (type Jira grammar, or `↑/↓` step 15 min,
@@ -464,7 +478,8 @@ Resolved from Q&A on 2026-09-15.
 | Mouse | Full click/drag/wheel support, keyboard-equivalent; single-click edits a cell |
 | Esc | Always one step back; never quits from main |
 | Duration input | Jira grammar, integers + unit only (`1h30m`, `90m`), no decimals, no bare numbers. Snap to 15 min, min 15 min |
-| Inline editing | Start/duration/title edited in-cell on the prepare pane; popup only for date/ticket/detail |
+| Inline editing | Start/duration/description edited in-cell on the prepare pane; popup only for new entries |
+| Re-sort timing | Prepare rows re-sort by start time only when the Enter walk ends or focus leaves the row, never between cells |
 | Remaining estimate | Unused; always `adjustEstimate=leave`, field never shown |
 | Holidays | None. Weekends only |
 | Storage | Single JSON state file; SQLite not needed at this scale |

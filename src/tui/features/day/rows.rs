@@ -106,6 +106,14 @@ impl PrepareRow {
     pub fn is_deleted(&self) -> bool {
         matches!(self, PrepareRow::Local(e) if e.is_deleted())
     }
+    /// Stable identity across adoption: the Jira worklog id when there is
+    /// one, else the local entry id.
+    pub fn identity(&self) -> String {
+        match self {
+            PrepareRow::Local(e) => e.worklog_id().map(|w| format!("w:{w}")).unwrap_or_else(|| format!("e:{}", e.id)),
+            PrepareRow::Remote(w) => format!("w:{}", w.id),
+        }
+    }
     pub fn local(&self) -> Option<&Entry> {
         match self {
             PrepareRow::Local(e) => Some(e),
@@ -140,7 +148,15 @@ impl PrepareRows {
 }
 
 pub fn prepare_rows(app: &App, m: &Model) -> PrepareRows {
-    prepare_rows_for(app, m.date)
+    let mut rows = prepare_rows_for(app, m.date);
+    if let Some(frozen) = &m.frozen {
+        // Keep the order the user saw when the walk started; rows that
+        // appeared since go after, in their natural order.
+        let n = rows.pending_len;
+        let pos = |r: &PrepareRow| frozen.iter().position(|id| *id == r.identity()).unwrap_or(usize::MAX);
+        rows.rows[..n].sort_by_key(pos);
+    }
+    rows
 }
 
 pub fn prepare_rows_for(app: &App, date: chrono::NaiveDate) -> PrepareRows {

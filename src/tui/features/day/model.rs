@@ -57,6 +57,12 @@ pub struct Model {
     pub ticket_sel: usize,
     pub prepare_sel: usize,
     pub edit: Option<CellEdit>,
+    /// Pending-row order captured when an Enter walk starts. While set, the
+    /// prepare pane keeps this order so the row under the cursor never moves
+    /// mid-walk; cleared (and the list re-sorted) when the walk ends.
+    pub frozen: Option<Vec<String>>,
+    /// Entry being walked, to re-find it after the re-sort.
+    pub walk_id: Option<EntryId>,
 }
 
 impl Model {
@@ -70,6 +76,8 @@ impl Model {
             ticket_sel: 0,
             prepare_sel: 0,
             edit: None,
+            frozen: None,
+            walk_id: None,
         }
     }
     pub fn query(&self) -> String {

@@ -214,10 +214,19 @@ fn begin_edit(app: &mut App, idx: Option<usize>, cell: Cell) {
         Cell::Title => entry.title.clone(),
     };
     let id = entry.id.clone();
+    // Walk start: freeze the pending order so this row stays put until done.
+    let frozen = match &app.screen {
+        Screen::Day(m) if m.frozen.is_none() => Some(prepare_rows(app, m).pending().iter().map(|r| r.identity()).collect::<Vec<_>>()),
+        _ => None,
+    };
     let m = model(app).unwrap();
     m.pane = Pane::Prepare;
     m.search_focused = false;
     m.prepare_sel = idx;
+    if frozen.is_some() {
+        m.frozen = frozen;
+        m.walk_id = Some(id.clone());
+    }
     m.edit = Some(CellEdit { id, cell, input: TextInput::with(text), error: None, pristine: true });
 }
 
@@ -257,6 +266,32 @@ fn commit_edit(app: &mut App) -> bool {
     }
 }
 
+/// The walk is over: drop the frozen order, let rows re-sort, and put the
+/// cursor back on the entry that was being edited.
+fn end_walk(app: &mut App) {
+    let Some(m) = model(app) else { return };
+    m.edit = None;
+    m.frozen = None;
+    let Some(id) = m.walk_id.take() else { return };
+    if let Screen::Day(m) = &app.screen
+        && let Some(idx) = prepare_rows(app, m).index_of_entry(&id)
+        && let Some(m) = model(app)
+    {
+        m.prepare_sel = idx;
+    }
+}
+
+/// Identity of the prepare row at `idx` as currently displayed.
+fn row_identity(app: &App, idx: usize) -> Option<String> {
+    let Screen::Day(m) = &app.screen else { return None };
+    prepare_rows(app, m).rows.get(idx).map(|r| r.identity())
+}
+
+fn index_of_identity(app: &App, ident: &str) -> Option<usize> {
+    let Screen::Day(m) = &app.screen else { return None };
+    prepare_rows(app, m).rows.iter().position(|r| r.identity() == ident)
+}
+
 fn clamp(app: &mut App) {
     let Screen::Day(m) = &app.screen else { return };
     let t = ticket_rows(app, m).len();
@@ -281,10 +316,30 @@ fn is_cell_action(a: &Action) -> bool {
 
 pub fn update(app: &mut App, action: Action) {
     use Action::*;
-    if !is_cell_action(&action) && !commit_edit(app) {
-        // Could not parse: keep the previous value, tell the user, move on.
-        let err = model(app).and_then(|m| m.edit.take()).and_then(|e| e.error).unwrap_or_default();
-        app.set_error(format!("edit dropped: {err}"));
+    let mut action = action;
+    if !is_cell_action(&action) {
+        // Remember which row was clicked *before* the list may re-sort.
+        let clicked = match &action {
+            SelectPrepare(i) | EditCellOf(i, _) => row_identity(app, *i),
+            _ => None,
+        };
+        if !commit_edit(app) {
+            // Could not parse: keep the previous value, tell the user, move on.
+            let err = model(app).and_then(|m| m.edit.as_ref()).and_then(|e| e.error.clone()).unwrap_or_default();
+            app.set_error(format!("edit dropped: {err}"));
+        }
+        if model(app).is_some_and(|m| m.frozen.is_some() || m.edit.is_some()) {
+            end_walk(app);
+        }
+        if let Some(ident) = clicked
+            && let Some(i) = index_of_identity(app, &ident)
+        {
+            action = match action {
+                SelectPrepare(_) => SelectPrepare(i),
+                EditCellOf(_, c) => EditCellOf(i, c),
+                other => other,
+            };
+        }
     }
     match action {
         FocusTickets => {
@@ -481,16 +536,14 @@ pub fn update(app: &mut App, action: Action) {
         }
         CellNext => {
             let next = model(app).and_then(|m| m.edit.as_ref()).and_then(|e| e.cell.next());
-            if commit_edit(app)
-                && let Some(cell) = next {
-                    begin_edit(app, None, cell);
+            if commit_edit(app) {
+                match next {
+                    Some(cell) => begin_edit(app, None, cell),
+                    None => end_walk(app),
                 }
-        }
-        CellCancel => {
-            if let Some(m) = model(app) {
-                m.edit = None;
             }
         }
+        CellCancel => end_walk(app),
         Remove => {
             let Screen::Day(m) = &app.screen else { return };
             let Some((idx, e)) = ensure_local(app, m.prepare_sel) else { return };
