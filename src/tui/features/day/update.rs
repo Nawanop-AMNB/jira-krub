@@ -50,10 +50,15 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         let a = match key.code {
             KeyCode::Esc => SearchClear,
             KeyCode::Enter => FocusTickets,
-            KeyCode::Right => FocusPrepare,
+            // arrows move the cursor inside the box (type-to-filter, no edit mode)
+            KeyCode::Left => SearchCursor(-1),
+            KeyCode::Right => SearchCursor(1),
+            KeyCode::Home => SearchCursor(i32::MIN),
+            KeyCode::End => SearchCursor(i32::MAX),
             // leave the box: selection is already on the first match
             KeyCode::Up | KeyCode::Down => FocusTickets,
             KeyCode::Backspace => SearchBackspace,
+            KeyCode::Delete => SearchDelete,
             KeyCode::Char('u') if ctrl => SearchClear,
             KeyCode::Char(c) if !ctrl => SearchChar(c),
             _ => return None,
@@ -373,6 +378,21 @@ pub fn update(app: &mut App, action: Action) {
             m.search.backspace();
             m.s.dirty_since = Some(Instant::now());
             m.ticket_sel = 0;
+        }
+        SearchDelete => {
+            let Some(m) = model(app) else { return };
+            m.search.delete();
+            m.s.dirty_since = Some(Instant::now());
+            m.ticket_sel = 0;
+        }
+        SearchCursor(d) => {
+            let Some(m) = model(app) else { return };
+            match d {
+                i32::MIN => m.search.home(),
+                i32::MAX => m.search.end(),
+                d if d < 0 => m.search.left(),
+                _ => m.search.right(),
+            }
         }
         SearchClear => {
             let Some(m) = model(app) else { return };

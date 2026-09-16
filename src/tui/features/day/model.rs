@@ -92,7 +92,10 @@ pub enum Action {
     FocusSearch,
     SearchChar(char),
     SearchBackspace,
+    SearchDelete,
     SearchClear,
+    /// Cursor moves inside the search box: -1 / +1 / home (i32::MIN) / end (i32::MAX).
+    SearchCursor(i32),
     Paste(String),
     Up,
     Down,

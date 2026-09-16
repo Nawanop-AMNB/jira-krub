@@ -364,8 +364,9 @@ exactly one field is open for typing.
   Space toggles, Enter commits, Esc reverts.
 - A walk form (Connect, popup) opens with its first field already in EDIT.
 - **Search boxes are the exception**: `/` (or click) opens them and typing
-  filters immediately; `↓`/Enter leave to the list, Esc clears. They are
-  never reached by `↑`/`↓` focus walking, so the rule never collides.
+  filters immediately; `←`/`→`/Home/End move the cursor inside the box,
+  `↓`/Enter leave to the list, Esc clears. They are never reached by
+  `↑`/`↓` focus walking, so the rule never collides.
 - Look: NAV field = `[ value  ]` dim brackets, focused row label bold
   accent. EDIT field = yellow background + cursor, footer shows
   `Enter commit · Esc revert`.
