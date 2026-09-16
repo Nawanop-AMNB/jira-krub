@@ -27,7 +27,7 @@ Local state (staged entries, watchlist) lives in
 
 **Day view** — tickets on the left, prepare-logwork on the right.
 - Tickets: `/` search (local filter instantly, Jira search after 300 ms),
-  `Space`/double-click/drag stage 1h at 09:00, `Enter` popup, `w` toggle watchlist, `→` focus right pane.
+  `Space`/double-click/drag stage 1h at 09:00, `Enter` popup, `w` toggle watchlist. `[`/`]` change day, `←`/`→` switch pane.
 - Prepare: `Enter` edits the row cell by cell (start → duration → description,
   `Enter` again leaves), or jump with `s` / `d` / `n`. First key replaces, `↑↓`
   step 15 min, `Esc` reverts, `⌫`/`Del` remove, `p` push day.

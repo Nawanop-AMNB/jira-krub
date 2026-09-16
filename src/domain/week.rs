@@ -62,11 +62,15 @@ pub struct DaySummary {
 }
 
 impl DaySummary {
+    /// Pushed + staged: what the day would hold after a push (bar only).
+    #[cfg(test)]
     pub fn total(&self) -> u64 {
         self.pushed_seconds + self.staged_seconds
     }
+    /// Hours still missing **in Jira**. Staged work never counts: green means
+    /// Jira has it, so a forgotten push stays visible.
     pub fn remaining(&self, target: u64) -> u64 {
-        target.saturating_sub(self.total())
+        target.saturating_sub(self.pushed_seconds)
     }
 
     /// Pushed seconds = remote worklogs ∪ local pushed entries whose worklog
@@ -101,14 +105,14 @@ impl DaySummary {
                 staged += e.seconds;
             }
         }
-        let total = pushed + staged;
+        // Status reflects Jira only; staged hours are shown separately.
         let status = if !is_workday(date) {
             DayStatus::Weekend
         } else if date > today {
             DayStatus::Future
-        } else if total >= target {
+        } else if pushed >= target {
             DayStatus::Full
-        } else if total > 0 {
+        } else if pushed > 0 {
             DayStatus::Short
         } else if date == today {
             DayStatus::TodayEmpty
@@ -172,8 +176,8 @@ mod tests {
         assert_eq!(s.pushed_seconds, 5400);
         assert_eq!(s.staged_seconds, 8100);
         assert_eq!(s.staged_count, 2);
-        assert_eq!(s.status, DayStatus::Short);
-        assert_eq!(s.remaining(target), 8 * 3600 - 13500);
+        assert_eq!(s.status, DayStatus::Short, "5400 pushed → short regardless of staged");
+        assert_eq!(s.remaining(target), 8 * 3600 - 5400, "staged hours do not reduce what is missing in Jira");
 
         let entries2 = vec![entry("5", "2026-09-16", 1800, EntryState::Modified { worklog_id: "r1".into() })];
         let s2 = DaySummary::compute(today, today, target, &entries2, &remote);

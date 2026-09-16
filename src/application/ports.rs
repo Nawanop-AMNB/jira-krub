@@ -1,7 +1,7 @@
 use super::{Config, Credentials};
 use crate::domain::{Issue, IssueKey, Ledger, RemoteWorklog};
 use anyhow::Result;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDate};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -18,12 +18,45 @@ pub struct NewWorklog {
     pub comment_paragraphs: Vec<String>,
 }
 
+/// Inclusive range of local calendar days worklogs are wanted for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Window {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+}
+
+impl Window {
+    pub fn contains(&self, d: NaiveDate) -> bool {
+        d >= self.from && d <= self.to
+    }
+    pub fn covers(&self, other: &Window) -> bool {
+        self.from <= other.from && self.to >= other.to
+    }
+}
+
+/// An issue from a search that asked for the `worklog` field. Jira embeds at
+/// most the first `EMBED_LIMIT` worklogs (all authors, oldest first) plus
+/// `total`; `my_worklogs` is that embedded page filtered to one author.
+#[derive(Debug, Clone)]
+pub struct IssueWithWorklogs {
+    pub issue: Issue,
+    pub my_worklogs: Vec<RemoteWorklog>,
+    pub total: u64,
+}
+
+/// How many worklogs Jira embeds per issue in a search response.
+pub const EMBED_LIMIT: u64 = 20;
+
 /// Jira Cloud as the app needs it. Blocking; callers run it off the UI thread.
 pub trait JiraGateway: Send + Sync {
     fn myself(&self) -> Result<Me>;
     fn search_issues(&self, jql: &str, max: usize) -> Result<Vec<Issue>>;
+    /// Same search, plus each issue's embedded worklog page for `account_id`.
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>>;
     fn get_issue(&self, key: &IssueKey) -> Result<Issue>;
-    fn my_worklogs(&self, key: &IssueKey, account_id: &str) -> Result<Vec<RemoteWorklog>>;
+    /// Worklogs on one issue by `account_id`, optionally only those started
+    /// inside `window` (server-side filter, cheap even for years-old issues).
+    fn my_worklogs(&self, key: &IssueKey, account_id: &str, window: Option<&Window>) -> Result<Vec<RemoteWorklog>>;
     fn add_worklog(&self, req: &NewWorklog) -> Result<RemoteWorklog>;
     fn update_worklog(&self, worklog_id: &str, req: &NewWorklog) -> Result<RemoteWorklog>;
     fn delete_worklog(&self, issue_key: &IssueKey, worklog_id: &str) -> Result<()>;

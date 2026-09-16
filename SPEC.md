@@ -138,9 +138,12 @@ Ordered by priority.
 
 **R1. Main screen — week summary (days only)**
 - One row per day Mon–Sun. No ticket columns on this screen.
-- Row shows: day label, progress bar, hours (pushed + staged), status word,
-  and staged count. Status: `✓` green ≥ target · `need Xh` yellow · `empty`
-  red on past workday · `future` dim · weekend blank.
+- Row shows: day label, progress bar (`█` pushed, `▓` staged), **pushed**
+  hours, status word, and `+Xh staged`. **Status and `need` come from pushed
+  hours only** — green means Jira has it, so staged-but-forgotten work can
+  never look done. Status: `✓` green pushed ≥ target · `need Xh` yellow ·
+  `empty` red on past workday · `future` dim · weekend blank.
+- Header shows `⚠ N staged not pushed — p` whenever anything is pending.
 - Header: `◀ prev-week  [ 14 Sep → 20 Sep ]  next-week ▶`, week total vs
   weekly target, total staged count.
 - Keys: `←/→` or `[`/`]` shift week · `t` current week · `j/k` select day ·
@@ -203,8 +206,9 @@ Ordered by priority.
   - `Space` / double-click / drag-to-right = **quick stage**: entry created
     on the right with duration `1h`, start `09:00`, empty title. No popup.
     Focus stays on the tickets pane so several tickets can be staged in a
-    row; the prepare cursor is left on the newest row.
-    `→` only moves focus to the prepare pane (never stages).
+    row; the prepare cursor is left on the newest row. Day changes only via
+    `[` `]` or the `◀ ▶` in the title — arrows never change the day, so a
+    stray keypress can't land entries on the wrong date. `←`/`→` switch pane.
   - `Enter` = stage via popup (R5) when details are known now.
   - Staging a ticket from the "jira" section also adds it to the watchlist.
   - `w` toggles the highlighted ticket on/off the watchlist. Same ticket
@@ -275,9 +279,16 @@ Ordered by priority.
   HTTP status visible, and re-pushing sends only the failed one.
 
 **R7. Sync from Jira**
-- On start and on `r`: fetch account id, issues (R2), and my worklogs for those
-  issues plus any issue with `worklogAuthor = currentUser()` in the visible
-  range.
+- On start, on `r`, and whenever the user navigates outside the fetched
+  window (visible week ∪ current week, plus 3 weeks back).
+- Request budget, independent of how old a ticket is:
+  - mine and history: one JQL search each with `fields=worklog`; Jira embeds
+    the first 20 worklogs per issue. Worklogs are filtered to my account id
+    (other people can log on my tickets) and to the window. An issue whose
+    `total` exceeds 20 is re-fetched per issue with `startedAfter/Before`.
+  - watchlist: always per issue with `startedAfter/Before` — shared tickets
+    carry years of other people's entries, the window keeps it tiny.
+  - Typical: 15 tickets → 2–4 requests.
 - Jira is the source of truth for pushed rows: on every sync, local
   `pushed` entries take the remote start/duration/comment, and ones Jira no
   longer has are dropped. Rows with a pending edit/delete are left alone.
@@ -326,6 +337,7 @@ Ordered by priority.
 | Settings | main, unsaved |
 | Setup (first run) | quit, nothing written |
 | Main | nothing; `q` quits (`q` with staged entries asks `N staged not pushed, quit? [y/n]`) |
+| Ctrl+C (anywhere) | first press warns, second within 2 s quits without confirm |
 
 **R10. Terminal safety**
 - Raw mode and alternate screen restored on normal exit, `q`, Ctrl-C, panic.
@@ -486,7 +498,7 @@ No hard deadline. Phase 2 is the first version worth using daily.
 | R1 main | done | bar shows pushed █ / staged ▓; `N staged` clickable |
 | R2 issue list | done | watchlist first, mine, then "logged recently"; Jira search results auto-watch when staged |
 | R3 state | done | `state.json`, DTO-mapped, atomic write |
-| R4 day view | done | `←/→` = switch pane only; `Space`/double-click/drag stage; `[` `]` = day; `d` = duration, ⌫/Del = remove |
+| R4 day view | done | `[` `]` only = prev/next day, `←`/`→` = pane; `Space`/double-click/drag stage; `d` = duration, ⌫/Del = remove |
 | R5 popup | done | fuzzy suggestions over local issues; Enter on Issue accepts |
 | R5b CRUD | done | inline cells, first keystroke replaces |
 | R6 push | done | title optional (no comment sent); per-entry failed state with HTTP message inline |

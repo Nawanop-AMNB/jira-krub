@@ -82,7 +82,6 @@ pub enum Action {
     FocusTickets,
     FocusPrepare,
     FocusSearch,
-    TogglePane,
     SearchChar(char),
     SearchBackspace,
     SearchClear,

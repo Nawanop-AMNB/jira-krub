@@ -17,12 +17,13 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     let target = app.target_seconds();
     let summary = DaySummary::compute(m.date, app.today, target, app.ledger.entries(), &app.remote.worklogs);
 
+    let staged = staged_total(&rows);
     let title = format!(
-        " ◀ {} ▶ · staged {} · pushed {} · need {} ",
+        " ◀ {} ▶ · pushed {} · need {}{} ",
         m.date.format("%a %d %b %Y"),
-        fmt0(staged_total(&rows)),
         fmt0(pushed_total(&rows)),
-        fmt0(summary.remaining(target))
+        fmt0(summary.remaining(target)),
+        if staged > 0 { format!(" · +{} staged", fmt0(staged)) } else { String::new() }
     );
     let block = Block::bordered().title(title).border_style(theme::accent());
     let inner = block.inner(body);
@@ -39,7 +40,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     draw_tickets(frame, app, m, left, hits);
     draw_prepare(frame, app, m, &rows, right, hits);
 
-    let mut hints = vec![Hint::new("p", "push", Global::Day(Action::PushDay)), Hint::new("[ ]", "day", Global::Nop)];
+    let mut hints = vec![Hint::new("p", "push", Global::Day(Action::PushDay)), Hint::new("[ ]", "day", Global::Nop), Hint::new("←→", "pane", Global::Nop)];
     if m.edit.is_some() {
         hints = vec![
             Hint::new("Enter", "next cell", Global::Day(Action::CellNext)),

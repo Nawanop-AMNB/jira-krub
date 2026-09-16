@@ -3,7 +3,7 @@ use super::deps::Deps;
 use super::features::{day, entry_form, push, setup, week};
 use super::hit::HitRegistry;
 use super::msg::{Msg, SyncError};
-use crate::application::ports::GatewayErrorKind;
+use crate::application::ports::{GatewayErrorKind, Window};
 use crate::application::use_cases::sync::{self, SyncInput};
 use crate::application::{Config, JiraGateway};
 use crate::domain::{Issue, IssueKey, Ledger, RemoteWorklog, StartTime, Week};
@@ -16,6 +16,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+/// Second Ctrl+C must arrive within this to quit.
+const CTRL_C_WINDOW: Duration = Duration::from_secs(2);
 
 /// What we last heard from Jira.
 #[derive(Default)]
@@ -26,6 +28,8 @@ pub struct RemoteCache {
     pub watched: Vec<Issue>,
     pub history: Vec<Issue>,
     pub worklogs: Vec<RemoteWorklog>,
+    /// Days the cached worklogs are complete for.
+    pub window: Option<Window>,
     pub syncing: bool,
     pub offline: bool,
 }
@@ -93,6 +97,7 @@ pub struct App {
     pub search_req: u64,
     last_click: Option<(Instant, Position)>,
     drag: Option<(IssueKey, Position)>,
+    ctrl_c_at: Option<Instant>,
 }
 
 impl App {
@@ -126,6 +131,7 @@ impl App {
             search_req: 0,
             last_click: None,
             drag: None,
+            ctrl_c_at: None,
         };
         if let Some(e) = ledger_err {
             app.set_error(format!("state file unreadable, starting empty: {e}"));
@@ -225,6 +231,41 @@ impl App {
 
     // ---- sync -----------------------------------------------------------
 
+    /// The week the user is looking at (main or day view).
+    pub fn visible_week(&self) -> Week {
+        match &self.screen {
+            Screen::Week(m) => m.week,
+            Screen::Day(m) => Week::containing(m.date),
+            Screen::Setup(_) => Week::containing(self.today),
+        }
+    }
+
+    /// Worklog window worth fetching: the visible week, this week, and three
+    /// weeks of history before the earlier of the two.
+    fn wanted_window(&self) -> Window {
+        let visible = self.visible_week();
+        let current = Week::containing(self.today);
+        let from = visible.monday().min(current.monday()) - Days::new(21);
+        let to = visible.sunday().max(current.sunday());
+        Window { from, to }
+    }
+
+    /// What a sync actually fetches: the wanted window padded so that a few
+    /// weeks of browsing don't each trigger a round trip.
+    fn fetch_window(&self) -> Window {
+        let w = self.wanted_window();
+        Window { from: w.from - Days::new(35), to: w.to + Days::new(7) }
+    }
+
+    /// Re-sync when the user navigates outside what was fetched.
+    pub fn ensure_window(&mut self) {
+        let wanted = self.wanted_window();
+        let covered = self.remote.window.is_some_and(|w| w.covers(&wanted));
+        if !covered && !self.remote.syncing {
+            self.start_sync();
+        }
+    }
+
     pub fn start_sync(&mut self) {
         let Some(gateway) = self.gateway.clone() else { return };
         let Some(jql) = self.config.as_ref().map(|c| c.jql().to_string()) else { return };
@@ -233,11 +274,7 @@ impl App {
         }
         self.remote.syncing = true;
         self.set_busy("syncing…");
-        let input = SyncInput {
-            jql,
-            watchlist: self.ledger.watchlist().to_vec(),
-            history_from: Week::containing(self.today).monday() - Days::new(21),
-        };
+        let input = SyncInput { jql, watchlist: self.ledger.watchlist().to_vec(), window: self.fetch_window() };
         self.worker.spawn(move || {
             Msg::Synced(sync::run(gateway.as_ref(), &input).map_err(|e| SyncError {
                 kind: crate::application::ports::classify(&e),
@@ -263,7 +300,10 @@ impl App {
                 self.remote.watched = out.watched;
                 self.remote.history = out.history;
                 self.remote.worklogs = out.worklogs;
+                self.remote.window = Some(out.window);
                 self.save_ledger();
+                // user may have navigated further while we were fetching
+                self.ensure_window();
                 self.set_status(format!(
                     "synced · {} issues · {} worklogs",
                     self.remote.mine.len() + self.remote.watched.len() + self.remote.history.len(),
@@ -294,9 +334,18 @@ impl App {
             return;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.dispatch(Action::ForceQuit);
+            // Two Ctrl+C within 2 s quit without any confirm; one just warns.
+            let now = Instant::now();
+            if self.ctrl_c_at.is_some_and(|t| now.duration_since(t) < CTRL_C_WINDOW) {
+                self.dispatch(Action::ForceQuit);
+            } else {
+                self.ctrl_c_at = Some(now);
+                let n = self.ledger.staged_count();
+                self.set_error(if n > 0 { format!("{n} staged not pushed — press Ctrl+C again to quit anyway") } else { "press Ctrl+C again to quit".into() });
+            }
             return;
         }
+        self.ctrl_c_at = None;
         let action = match &self.overlay {
             Some(Overlay::Confirm(_)) => match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => Some(Action::ConfirmYes),

@@ -90,9 +90,22 @@ fn weekend_status_wins_over_totals() {
 }
 
 #[test]
-fn status_is_full_when_total_equals_target_exactly() {
+fn status_is_full_only_when_pushed_equals_target() {
+    // half staged + half pushed is NOT full: green means Jira has it
     let s = summary(&[entry("1", TARGET / 2, EntryState::Staged)], &[remote("r1", TARGET / 2)]);
     assert_eq!(s.total(), TARGET);
+    assert_eq!(s.status, DayStatus::Short);
+    assert_eq!(s.remaining(TARGET), TARGET / 2);
+    // all pushed → full
+    let s = summary(&[], &[remote("r1", TARGET)]);
     assert_eq!(s.status, DayStatus::Full);
     assert_eq!(s.remaining(TARGET), 0);
+}
+
+#[test]
+fn staged_only_day_is_still_empty() {
+    let s = summary(&[entry("1", TARGET, EntryState::Staged)], &[]);
+    assert_eq!(s.staged_seconds, TARGET);
+    assert_eq!(s.status, DayStatus::TodayEmpty);
+    assert_eq!(s.remaining(TARGET), TARGET);
 }

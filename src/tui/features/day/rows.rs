@@ -140,10 +140,14 @@ impl PrepareRows {
 }
 
 pub fn prepare_rows(app: &App, m: &Model) -> PrepareRows {
+    prepare_rows_for(app, m.date)
+}
+
+pub fn prepare_rows_for(app: &App, date: chrono::NaiveDate) -> PrepareRows {
     let mut pending: Vec<PrepareRow> = Vec::new();
     let mut jira: Vec<PrepareRow> = Vec::new();
     let mut known_ids: HashSet<String> = HashSet::new();
-    for e in app.ledger.entries_on(m.date) {
+    for e in app.ledger.entries_on(date) {
         if let Some(id) = e.worklog_id() {
             known_ids.insert(id.to_string());
         }
@@ -153,7 +157,7 @@ pub fn prepare_rows(app: &App, m: &Model) -> PrepareRows {
             jira.push(PrepareRow::Local(e.clone()));
         }
     }
-    for w in app.remote.worklogs.iter().filter(|w| w.local_date() == m.date) {
+    for w in app.remote.worklogs.iter().filter(|w| w.local_date() == date) {
         if !known_ids.contains(&w.id) {
             jira.push(PrepareRow::Remote(w.clone()));
         }

@@ -1,8 +1,8 @@
-use crate::application::ports::{GatewayError, GatewayErrorKind, JiraGateway, Me, NewWorklog};
+use crate::application::ports::{GatewayError, GatewayErrorKind, IssueWithWorklogs, JiraGateway, Me, NewWorklog, Window};
 use crate::application::Credentials;
 use crate::domain::{Issue, IssueKey, RemoteWorklog};
 use anyhow::{Context, Result, anyhow};
-use chrono::DateTime;
+use chrono::{DateTime, Days, Local, TimeZone};
 use reqwest::blocking::{Client, RequestBuilder};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -34,6 +34,27 @@ impl HttpJiraGateway {
         format!("{}/rest/api/3{}", self.base, path)
     }
 
+    /// Paged `/search/jql`, returning the raw issue objects.
+    fn search_raw(&self, jql: &str, max: usize, fields: &str) -> Result<Vec<Value>> {
+        let mut out: Vec<Value> = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let page = (max - out.len()).clamp(1, 100);
+            let mut q = vec![("jql", jql.to_string()), ("fields", fields.to_string()), ("maxResults", page.to_string())];
+            if let Some(t) = &token {
+                q.push(("nextPageToken", t.clone()));
+            }
+            let v = self.send(self.http.get(self.url("/search/jql")).query(&q), "search")?;
+            out.extend(v["issues"].as_array().cloned().unwrap_or_default());
+            match v["nextPageToken"].as_str() {
+                Some(t) if v["isLast"].as_bool() != Some(true) && out.len() < max => token = Some(t.to_string()),
+                _ => break,
+            }
+        }
+        out.truncate(max);
+        Ok(out)
+    }
+
     fn send(&self, rb: RequestBuilder, what: &str) -> Result<Value> {
         let resp = rb
             .basic_auth(&self.email, Some(&self.token))
@@ -63,6 +84,16 @@ impl HttpJiraGateway {
         }
         serde_json::from_str(&text).with_context(|| format!("{what}: bad JSON"))
     }
+}
+
+/// `[from 00:00, to 24:00)` in local time as epoch milliseconds.
+fn window_millis(w: &Window) -> (i64, i64) {
+    let start = Local.from_local_datetime(&w.from.and_hms_opt(0, 0, 0).unwrap()).single();
+    let end = Local.from_local_datetime(&(w.to + Days::new(1)).and_hms_opt(0, 0, 0).unwrap()).single();
+    (
+        start.map(|d| d.timestamp_millis()).unwrap_or(0),
+        end.map(|d| d.timestamp_millis() - 1).unwrap_or(i64::MAX),
+    )
 }
 
 fn extract_error_message(body: &str) -> Option<String> {
@@ -141,27 +172,27 @@ impl JiraGateway for HttpJiraGateway {
     }
 
     fn search_issues(&self, jql: &str, max: usize) -> Result<Vec<Issue>> {
-        let mut out = Vec::new();
-        let mut token: Option<String> = None;
-        loop {
-            let page = (max - out.len()).clamp(1, 100);
-            let mut q = vec![
-                ("jql", jql.to_string()),
-                ("fields", "summary,status".to_string()),
-                ("maxResults", page.to_string()),
-            ];
-            if let Some(t) = &token {
-                q.push(("nextPageToken", t.clone()));
-            }
-            let v = self.send(self.http.get(self.url("/search/jql")).query(&q), "search")?;
-            out.extend(v["issues"].as_array().into_iter().flatten().filter_map(parse_issue));
-            match v["nextPageToken"].as_str() {
-                Some(t) if v["isLast"].as_bool() != Some(true) && out.len() < max => token = Some(t.to_string()),
-                _ => break,
-            }
-        }
-        out.truncate(max);
-        Ok(out)
+        Ok(self.search_raw(jql, max, "summary,status")?.iter().filter_map(parse_issue).collect())
+    }
+
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
+        let raw = self.search_raw(jql, max, "summary,status,worklog")?;
+        Ok(raw
+            .iter()
+            .filter_map(|v| {
+                let issue = parse_issue(v)?;
+                let field = &v["fields"]["worklog"];
+                let my_worklogs = field["worklogs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|w| w["author"]["accountId"].as_str() == Some(account_id))
+                    .filter_map(|w| parse_worklog(&issue.key, w))
+                    .collect();
+                let total = field["total"].as_u64().unwrap_or(0);
+                Some(IssueWithWorklogs { issue, my_worklogs, total })
+            })
+            .collect())
     }
 
     fn get_issue(&self, key: &IssueKey) -> Result<Issue> {
@@ -170,11 +201,17 @@ impl JiraGateway for HttpJiraGateway {
         parse_issue(&v).context("issue: unparseable")
     }
 
-    fn my_worklogs(&self, key: &IssueKey, account_id: &str) -> Result<Vec<RemoteWorklog>> {
+    fn my_worklogs(&self, key: &IssueKey, account_id: &str, window: Option<&Window>) -> Result<Vec<RemoteWorklog>> {
         let mut out = Vec::new();
         let mut start = 0u64;
         loop {
-            let q = [("startAt", start.to_string()), ("maxResults", "1000".to_string())];
+            let mut q = vec![("startAt", start.to_string()), ("maxResults", "1000".to_string())];
+            if let Some(w) = window {
+                // Jira filters on the worklog's `started` timestamp (epoch ms).
+                let (after, before) = window_millis(w);
+                q.push(("startedAfter", after.to_string()));
+                q.push(("startedBefore", before.to_string()));
+            }
             let v = self.send(
                 self.http.get(self.url(&format!("/issue/{key}/worklog"))).query(&q),
                 &format!("worklogs {key}"),

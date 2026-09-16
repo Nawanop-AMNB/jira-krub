@@ -1,14 +1,19 @@
 use super::sync::{SyncInput, run};
+use crate::application::ports::Window;
 use crate::application::test_support::{FakeGateway, Script, issue, key, me, remote};
 use crate::domain::IssueKey;
 use chrono::NaiveDate;
 
+fn d(y: i32, m: u32, day: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, day).unwrap()
+}
+
+fn window() -> Window {
+    Window { from: d(2026, 9, 14), to: d(2026, 9, 20) }
+}
+
 fn input(watchlist: &[&str]) -> SyncInput {
-    SyncInput {
-        jql: "assignee = currentUser()".into(),
-        watchlist: watchlist.iter().map(|k| key(k)).collect(),
-        history_from: NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
-    }
+    SyncInput { jql: "assignee = currentUser()".into(), watchlist: watchlist.iter().map(|k| key(k)).collect(), window: window() }
 }
 
 fn keys(issues: &[crate::domain::Issue]) -> Vec<&str> {
@@ -43,33 +48,63 @@ fn history_excludes_issues_already_mine_or_watched() {
 }
 
 #[test]
-fn history_jql_uses_worklog_author_and_the_from_date() {
+fn history_jql_uses_worklog_author_and_the_window() {
     let gw = FakeGateway::default();
     run(&gw, &input(&[])).unwrap();
     let jql = &gw.calls().jql[1];
     assert!(jql.contains("worklogAuthor = currentUser()"), "{jql}");
     assert!(jql.contains("worklogDate >= 2026-09-14"), "{jql}");
+    assert!(jql.contains("worklogDate <= 2026-09-20"), "{jql}");
 }
 
 #[test]
-fn worklogs_are_fetched_for_mine_watched_and_history_with_my_account_id() {
+fn mine_uses_embedded_worklogs_and_watchlist_is_fetched_per_issue_with_window() {
     let gw = FakeGateway::new(Script {
         me: Some(me("acc-42", "Me")),
-        searches: [Ok(vec![issue("A-1")]), Ok(vec![issue("H-1")])].into(),
+        searches: [Ok(vec![issue("A-1")]), Ok(vec![])].into(),
         issues: [("OPS-7".to_string(), issue("OPS-7"))].into(),
-        worklogs: [
-            ("A-1".to_string(), vec![remote("w1", "A-1", (2026, 9, 16), 3600)]),
-            ("H-1".to_string(), vec![remote("w2", "H-1", (2026, 9, 15), 900)]),
-        ]
-        .into(),
+        embedded: [("A-1".to_string(), (vec![remote("w1", "A-1", (2026, 9, 16), 3600)], 1))].into(),
+        worklogs: [("OPS-7".to_string(), vec![remote("w9", "OPS-7", (2026, 9, 15), 900)])].into(),
         ..Default::default()
     });
     let out = run(&gw, &input(&["OPS-7"])).unwrap();
     assert_eq!(out.account_id, "acc-42");
-    assert_eq!(out.display_name, "Me");
-    let ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
-    assert_eq!(ids, vec!["w1", "w2"]);
-    let expected: Vec<(IssueKey, String)> =
-        ["A-1", "OPS-7", "H-1"].iter().map(|k| (key(k), "acc-42".to_string())).collect();
+    let mut ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
+    ids.sort();
+    assert_eq!(ids, vec!["w1", "w9"]);
+    // only the watched issue needed a per-issue call, and it carried the window
+    let expected: Vec<(IssueKey, String, Option<Window>)> = vec![(key("OPS-7"), "acc-42".to_string(), Some(window()))];
     assert_eq!(gw.calls().my_worklogs, expected);
+    assert_eq!(out.window, window());
+}
+
+#[test]
+fn embedded_worklogs_outside_the_window_are_dropped() {
+    let gw = FakeGateway::new(Script {
+        searches: [Ok(vec![issue("A-1")]), Ok(vec![])].into(),
+        embedded: [(
+            "A-1".to_string(),
+            (vec![remote("old", "A-1", (2025, 1, 5), 3600), remote("in", "A-1", (2026, 9, 17), 3600)], 2),
+        )]
+        .into(),
+        ..Default::default()
+    });
+    let out = run(&gw, &input(&[])).unwrap();
+    let ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
+    assert_eq!(ids, vec!["in"]);
+}
+
+#[test]
+fn issue_with_more_worklogs_than_jira_embeds_is_refetched_with_window() {
+    // Jira embeds at most 20; total 25 means the page is incomplete.
+    let gw = FakeGateway::new(Script {
+        searches: [Ok(vec![issue("BIG-1")]), Ok(vec![])].into(),
+        embedded: [("BIG-1".to_string(), (vec![remote("stale", "BIG-1", (2026, 9, 16), 60)], 25))].into(),
+        worklogs: [("BIG-1".to_string(), vec![remote("fresh", "BIG-1", (2026, 9, 16), 3600)])].into(),
+        ..Default::default()
+    });
+    let out = run(&gw, &input(&[])).unwrap();
+    let ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
+    assert_eq!(ids, vec!["fresh"], "embedded page ignored when incomplete");
+    assert_eq!(gw.calls().my_worklogs, vec![(key("BIG-1"), "acc-1".to_string(), Some(window()))]);
 }

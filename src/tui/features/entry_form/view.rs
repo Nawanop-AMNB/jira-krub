@@ -98,10 +98,11 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         })
         .unwrap_or(0);
     let info = format!(
-        "on issue today {} · day {} · need {}",
+        "on issue today {} · pushed {} · need {} · staged {}",
         fmt0(on_issue),
-        fmt0(s.total()),
-        fmt0(s.remaining(target))
+        fmt0(s.pushed_seconds),
+        fmt0(s.remaining(target)),
+        fmt0(s.staged_seconds)
     );
     frame.render_widget(Paragraph::new(Span::styled(format!("  {info}"), theme::dim())), Rect { x: inner.x, y, width: inner.width, height: 1 });
     y += 1;

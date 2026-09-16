@@ -47,7 +47,7 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         let a = match key.code {
             KeyCode::Esc => SearchClear,
             KeyCode::Enter => FocusTickets,
-            KeyCode::Tab => TogglePane,
+            KeyCode::Right => FocusPrepare,
             // leave the box: selection is already on the first match
             KeyCode::Up | KeyCode::Down => FocusTickets,
             KeyCode::Backspace => SearchBackspace,
@@ -61,8 +61,12 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     let a = match (m.pane, key.code) {
         (_, KeyCode::Char('q')) => return Some(Global::Quit),
         (_, KeyCode::Char('r')) => return Some(Global::Refresh),
-        (_, KeyCode::Tab) => TogglePane,
+        // ← → switch pane; day changes only via [ ] (or ◀ ▶ in the title)
+        (_, KeyCode::Left) | (_, KeyCode::Char('h')) => FocusTickets,
+        (_, KeyCode::Right) | (_, KeyCode::Char('l')) => FocusPrepare,
         (_, KeyCode::Char('/')) => FocusSearch,
+        // Day changes only via [ ] (or the ◀ ▶ in the title) — never arrows,
+        // so a stray keypress can't move entries to the wrong day.
         (_, KeyCode::Char('[')) => PrevDay,
         (_, KeyCode::Char(']')) => NextDay,
         (_, KeyCode::Char('p')) => PushDay,
@@ -72,16 +76,14 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
 
         (Pane::Tickets, KeyCode::Enter) => OpenForm,
         (Pane::Tickets, KeyCode::Char(' ')) => QuickStage,
-        (Pane::Tickets, KeyCode::Right) | (Pane::Tickets, KeyCode::Char('l')) => FocusPrepare,
+
         (Pane::Tickets, KeyCode::Char('w')) => ToggleWatch,
-        (Pane::Tickets, KeyCode::Left) | (Pane::Tickets, KeyCode::Char('h')) => PrevDay,
 
         (Pane::Prepare, KeyCode::Char('s')) => EditCell(Cell::Start),
         (Pane::Prepare, KeyCode::Char('d')) | (Pane::Prepare, KeyCode::Char('u')) => EditCell(Cell::Duration),
         (Pane::Prepare, KeyCode::Char('n')) => EditCell(Cell::Title),
         (Pane::Prepare, KeyCode::Enter) => EditCell(Cell::Start),
         (Pane::Prepare, KeyCode::Backspace) | (Pane::Prepare, KeyCode::Delete) => Remove,
-        (Pane::Prepare, KeyCode::Left) | (Pane::Prepare, KeyCode::Char('h')) => FocusTickets,
         _ => return None,
     };
     Some(Global::Day(a))
@@ -236,6 +238,14 @@ fn commit_edit(app: &mut App) -> bool {
             m.edit = None;
             app.ledger.edit(&edit.id, apply);
             app.save_ledger();
+            // Rows are sorted by start time, so the edited row may have moved:
+            // keep the cursor on the same entry, not the same index.
+            if let Screen::Day(m) = &app.screen
+                && let Some(idx) = prepare_rows(app, m).index_of_entry(&edit.id)
+                && let Some(m) = model(app)
+            {
+                m.prepare_sel = idx;
+            }
             true
         }
         Err(e) => {
@@ -291,14 +301,6 @@ pub fn update(app: &mut App, action: Action) {
             let Some(m) = model(app) else { return };
             m.pane = Pane::Tickets;
             m.search_focused = true;
-        }
-        TogglePane => {
-            let Some(m) = model(app) else { return };
-            m.search_focused = false;
-            m.pane = match m.pane {
-                Pane::Tickets => Pane::Prepare,
-                Pane::Prepare => Pane::Tickets,
-            };
         }
         SearchChar(c) => {
             let Some(m) = model(app) else { return };
@@ -513,6 +515,7 @@ pub fn update(app: &mut App, action: Action) {
             m.prepare_sel = 0;
             m.edit = None;
             clamp(app);
+            app.ensure_window();
         }
         Back => {
             let Some(m) = model(app) else { return };

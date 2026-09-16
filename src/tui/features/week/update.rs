@@ -29,11 +29,18 @@ pub fn update(app: &mut App, action: Action) {
     let today = app.today;
     let Screen::Week(m) = &mut app.screen else { return };
     match action {
-        PrevWeek => m.week = m.week.prev(),
-        NextWeek => m.week = m.week.next(),
+        PrevWeek => {
+            m.week = m.week.prev();
+            app.ensure_window();
+        }
+        NextWeek => {
+            m.week = m.week.next();
+            app.ensure_window();
+        }
         Today => {
             m.week = Week::containing(today);
             m.select_date(today);
+            app.ensure_window();
         }
         Up => m.selected = (m.selected + 6) % 7,
         Down => m.selected = (m.selected + 1) % 7,

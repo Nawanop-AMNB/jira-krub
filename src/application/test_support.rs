@@ -1,7 +1,7 @@
 //! In-memory `JiraGateway` for use-case tests. Responses are scripted up
 //! front; every call is recorded so tests can assert on what was sent.
 
-use crate::application::ports::{GatewayError, GatewayErrorKind, JiraGateway, Me, NewWorklog};
+use crate::application::ports::{GatewayError, GatewayErrorKind, IssueWithWorklogs, JiraGateway, Me, NewWorklog, Window};
 use crate::domain::{Issue, IssueKey, RemoteWorklog};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, FixedOffset, TimeZone};
@@ -21,6 +21,9 @@ pub struct Script {
     pub issues: HashMap<String, Issue>,
     /// `my_worklogs` by key. Missing keys answer an empty list.
     pub worklogs: HashMap<String, Vec<RemoteWorklog>>,
+    /// Embedded page attached to search results by key: (my worklogs, total).
+    /// Missing keys answer (empty, 0).
+    pub embedded: HashMap<String, (Vec<RemoteWorklog>, u64)>,
     pub worklogs_error: Option<GatewayError>,
     /// Default: echoes the request back with id `"created"`.
     pub add_result: Option<Result<RemoteWorklog, GatewayError>>,
@@ -34,8 +37,8 @@ pub struct Calls {
     pub myself: usize,
     pub jql: Vec<String>,
     pub get_issue: Vec<IssueKey>,
-    /// (issue key, account id)
-    pub my_worklogs: Vec<(IssueKey, String)>,
+    /// (issue key, account id, window)
+    pub my_worklogs: Vec<(IssueKey, String, Option<Window>)>,
     pub added: Vec<NewWorklog>,
     /// (worklog id, request)
     pub updated: Vec<(String, NewWorklog)>,
@@ -97,6 +100,18 @@ impl JiraGateway for FakeGateway {
         }
     }
 
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, _account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
+        let issues = self.search_issues(jql, max)?;
+        let s = self.script.lock().unwrap();
+        Ok(issues
+            .into_iter()
+            .map(|issue| {
+                let (my_worklogs, total) = s.embedded.get(issue.key.as_str()).cloned().unwrap_or_default();
+                IssueWithWorklogs { issue, my_worklogs, total }
+            })
+            .collect())
+    }
+
     fn get_issue(&self, key: &IssueKey) -> Result<Issue> {
         self.calls().get_issue.push(key.clone());
         self.script
@@ -108,8 +123,8 @@ impl JiraGateway for FakeGateway {
             .ok_or_else(|| to_anyhow(gateway_error(GatewayErrorKind::NotFound, format!("issue {key}: HTTP 404"))))
     }
 
-    fn my_worklogs(&self, key: &IssueKey, account_id: &str) -> Result<Vec<RemoteWorklog>> {
-        self.calls().my_worklogs.push((key.clone(), account_id.to_string()));
+    fn my_worklogs(&self, key: &IssueKey, account_id: &str, window: Option<&Window>) -> Result<Vec<RemoteWorklog>> {
+        self.calls().my_worklogs.push((key.clone(), account_id.to_string(), window.copied()));
         let s = self.script.lock().unwrap();
         if let Some(e) = &s.worklogs_error {
             return Err(to_anyhow(e.clone()));

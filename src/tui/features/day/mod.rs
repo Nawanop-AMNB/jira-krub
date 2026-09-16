@@ -1,7 +1,7 @@
 //! Day view: tickets pane (search + watchlist + mine) → prepare-logwork pane.
 
 mod model;
-mod rows;
+pub mod rows;
 mod update;
 mod view;
 
