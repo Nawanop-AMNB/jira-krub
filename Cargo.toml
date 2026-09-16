@@ -1,0 +1,18 @@
+[package]
+name = "jira-krub"
+version = "0.1.0"
+edition = "2024"
+description = "Terminal UI for staging and batch-pushing Jira worklogs"
+repository = "https://github.com/Nawanop-AMNB/jira-krub"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", features = ["serde"] }
+crossterm = { version = "0.29.0", features = ["bracketed-paste"] }
+dirs = "7.0.0"
+ratatui = "0.30.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.6"
