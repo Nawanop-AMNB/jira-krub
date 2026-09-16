@@ -13,9 +13,13 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     if key.code == KeyCode::Char('s') && ctrl {
         return Some(Global::Form(Save));
     }
+    let newline_combo = matches!(key.code, KeyCode::Enter) && (ctrl || shift || key.modifiers.contains(KeyModifiers::ALT));
     let a = if m.editing {
         match key.code {
             KeyCode::Esc => Revert,
+            // multi-line description: Ctrl/Shift/Alt+Enter (Kitty-capable terminals) or Ctrl+J anywhere
+            KeyCode::Enter if m.focus == Field::Title && newline_combo => Newline,
+            KeyCode::Char('j') if m.focus == Field::Title && ctrl => Newline,
             KeyCode::Enter if m.focus == Field::Issue => AcceptIssue,
             KeyCode::Enter => Commit(1),
             // inside these fields ↑↓ have a field meaning; elsewhere they commit and move
@@ -129,7 +133,6 @@ fn save(app: &mut App) {
         start,
         seconds,
         title: m.title.text().trim().to_string(),
-        detail: m.detail.text().trim().to_string(),
         state: EntryState::Staged,
     };
     let label = format!("{} {} on {}", duration::format(entry.seconds), entry.issue_key, entry.date.format("%a %d %b"));
@@ -213,6 +216,11 @@ pub fn update(app: &mut App, action: Action) {
                 StartStep(delta) => {
                     let cur = StartTime::parse(m.start.text()).unwrap_or(StartTime::NINE);
                     m.start.set(cur.stepped(delta).to_string());
+                }
+                Newline => {
+                    if m.focus == Field::Title {
+                        m.title.insert('\n');
+                    }
                 }
                 Char(c) => {
                     let f = m.focus;

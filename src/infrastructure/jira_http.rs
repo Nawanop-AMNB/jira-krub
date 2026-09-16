@@ -132,16 +132,20 @@ fn parse_worklog(key: &IssueKey, w: &Value) -> Option<RemoteWorklog> {
     })
 }
 
-/// Flatten Atlassian Document Format to plain text.
+/// Flatten Atlassian Document Format to plain text, one line per paragraph
+/// (hard breaks inside a paragraph become lines too).
 fn adf_text(v: &Value) -> String {
     fn walk(v: &Value, out: &mut String) {
+        if v["type"] == "hardBreak" {
+            out.push('\n');
+        }
         if let Some(t) = v["text"].as_str() {
             out.push_str(t);
         }
         if let Some(arr) = v["content"].as_array() {
             for (i, c) in arr.iter().enumerate() {
                 if i > 0 && c["type"] == "paragraph" {
-                    out.push(' ');
+                    out.push('\n');
                 }
                 walk(c, out);
             }
@@ -149,7 +153,7 @@ fn adf_text(v: &Value) -> String {
     }
     let mut s = String::new();
     walk(v, &mut s);
-    s
+    s.trim_end().to_string()
 }
 
 fn adf_doc(paragraphs: &[String]) -> Value {
@@ -287,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn adf_text_flattens_paragraphs_with_a_space() {
+    fn adf_text_one_line_per_paragraph() {
         let doc = json!({
             "type": "doc", "version": 1,
             "content": [
@@ -295,7 +299,7 @@ mod tests {
                 { "type": "paragraph", "content": [{ "type": "text", "text": "details" }] }
             ]
         });
-        assert_eq!(adf_text(&doc), "fix expiry details");
+        assert_eq!(adf_text(&doc), "fix expiry\ndetails");
         assert_eq!(adf_text(&Value::Null), "");
     }
 

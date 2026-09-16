@@ -8,14 +8,14 @@ pub enum Field {
     Date,
     Start,
     Duration,
+    /// Description: the worklog comment, multi-line.
     Title,
-    Detail,
     /// The Save button: end of the walk.
     Save,
 }
 
 impl Field {
-    pub const ORDER: [Field; 7] = [Field::Issue, Field::Date, Field::Start, Field::Duration, Field::Title, Field::Detail, Field::Save];
+    pub const ORDER: [Field; 6] = [Field::Issue, Field::Date, Field::Start, Field::Duration, Field::Title, Field::Save];
     pub fn next(self) -> Self {
         let i = Self::ORDER.iter().position(|f| *f == self).unwrap_or(0);
         Self::ORDER[(i + 1) % Self::ORDER.len()]
@@ -35,7 +35,6 @@ pub struct Model {
     pub start: TextInput,
     pub duration: TextInput,
     pub title: TextInput,
-    pub detail: TextInput,
     pub focus: Field,
     pub error: Option<String>,
     /// Issues to suggest from (local: watchlist + mine + history).
@@ -57,7 +56,6 @@ impl Model {
             start: TextInput::with(start.to_string()),
             duration: TextInput::default(),
             title: TextInput::default(),
-            detail: TextInput::default(),
             focus,
             error: None,
             candidates,
@@ -75,7 +73,6 @@ impl Model {
             Field::Start => Some(&mut self.start),
             Field::Duration => Some(&mut self.duration),
             Field::Title => Some(&mut self.title),
-            Field::Detail => Some(&mut self.detail),
             Field::Date | Field::Save => None,
         }
     }
@@ -125,6 +122,8 @@ pub enum Action {
     FocusPrev,
     Focus(Field),
     Char(char),
+    /// Ctrl+Enter / Shift+Enter / Ctrl+J in the description.
+    Newline,
     Paste(String),
     Backspace,
     Delete,

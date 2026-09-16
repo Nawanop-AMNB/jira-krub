@@ -105,6 +105,8 @@ pub enum Action {
     EditCell(Cell),
     EditCellOf(usize, Cell),
     CellChar(char),
+    /// Ctrl+Enter / Ctrl+J while editing the description cell.
+    CellNewline,
     CellBackspace,
     CellDelete,
     CellLeft,

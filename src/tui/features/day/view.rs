@@ -48,6 +48,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         hints = vec![
             Hint::new("Enter", "next cell", Global::Day(Action::CellNext)),
             Hint::new("↑↓", "step 15m", Global::Nop),
+            Hint::new("^J", "newline", Global::Day(Action::CellNewline)),
             Hint::new("Esc", "revert", Global::Day(Action::CellCancel)),
         ];
     } else if m.search_focused {
@@ -269,7 +270,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         let x_title = x_sum + c_sum + GAP;
         let title_w = (area.x + area.width).saturating_sub(x_title + if in_jira { 2 } else { 0 });
 
-        let title_txt = row.title();
+        let title_txt = row.title().replace('\n', " ⏎ ");
         let cells = [
             (Cell::Start, Rect { x: x_start, y, width: start_w, height: 1 }, row.start().to_string()),
             (Cell::Duration, Rect { x: x_dur, y, width: dur_w, height: 1 }, duration::format(row.seconds())),

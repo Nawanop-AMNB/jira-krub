@@ -1,4 +1,4 @@
-//! Popup form for a single entry: issue, date, start, duration, title, detail.
+//! Popup form for a new entry: issue, date, start, duration, description.
 
 mod model;
 mod update;

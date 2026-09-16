@@ -12,18 +12,25 @@ pub mod widgets;
 
 use anyhow::Result;
 use app::App;
-use crossterm::event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event};
+use crossterm::event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use crossterm::execute;
 use deps::Deps;
 use std::io::stdout;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const TICK: Duration = Duration::from_millis(100);
 
 fn restore() {
+    if KITTY.load(Ordering::Relaxed) {
+        let _ = execute!(stdout(), PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(stdout(), DisableMouseCapture, DisableBracketedPaste);
     ratatui::restore();
 }
+
+/// Whether we pushed keyboard-enhancement flags (must be popped on exit).
+static KITTY: AtomicBool = AtomicBool::new(false);
 
 pub fn run(deps: Deps) -> Result<()> {
     let hook = std::panic::take_hook();
@@ -34,6 +41,13 @@ pub fn run(deps: Deps) -> Result<()> {
 
     let mut terminal = ratatui::init();
     execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
+    // Kitty keyboard protocol (Ghostty, kitty, WezTerm, iTerm): lets
+    // Ctrl+Enter / Shift+Enter reach us as distinct keys. Others ignore it.
+    if matches!(crossterm::terminal::supports_keyboard_enhancement(), Ok(true))
+        && execute!(stdout(), PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)).is_ok()
+    {
+        KITTY.store(true, Ordering::Relaxed);
+    }
     let result = event_loop(&mut terminal, deps);
     restore();
     result

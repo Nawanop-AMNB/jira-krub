@@ -67,8 +67,8 @@ Ordered by priority.
 **Capture**
 - As the developer, I want to jot "1h30 on ABC-123: fixed auth bug" the moment
   I finish, so that I do not have to remember it later.
-- As the developer, I want each entry to have a short title and an optional
-  longer detail, so that the Jira comment is meaningful without extra typing.
+- As the developer, I want each entry to carry a multi-line description, so
+  that the Jira comment is meaningful without opening the browser.
 - As the developer, I want to pick the ticket by fuzzy-typing part of its key
   or summary, so that I never type a full key.
 - As the developer, I want a start time that defaults to 09:00 but can be
@@ -178,8 +178,10 @@ Ordered by priority.
   name and the grid cell shows `1h`.
 
 **R3. Local entry model (drafts)**
-- Entry = { id, issue_key, date, start_time, seconds, title, detail?, state,
-  jira_worklog_id?, error? }.
+- Entry = { id, issue_key, date, start_time, seconds, description, state,
+  jira_worklog_id?, error? }. Description is multi-line: each non-empty
+  line becomes one Jira comment paragraph, and a synced comment comes back
+  one paragraph per line.
 - `state ∈ { pending, pushed, failed }`.
 - Persisted at `~/.local/share/jira-krub/state.json` (XDG data dir) together
   with the watchlist; written atomically on every change.
@@ -262,8 +264,10 @@ Ordered by priority.
 
 **R5. Entry form (popup)**
 - Fields, `↑`/`↓` order: issue (fuzzy over tickets pane list, prefilled), date
-  (`←/→`), start (default `09:00`, `↑/↓` 15 min, typeable), duration, title,
-  detail (optional, single line in v1).
+  (`←/→`), start (default `09:00`, `↑/↓` 15 min, typeable), duration,
+  description (multi-line; `Ctrl+Enter` / `Shift+Enter` on terminals with
+  the Kitty keyboard protocol such as Ghostty, kitty, WezTerm, iTerm, and
+  `Ctrl+J` everywhere, insert a newline; plain Enter commits).
 - Duration grammar = Jira's: integer + unit, units `w d h m`, any order,
   spaces optional. Valid: `2h`, `1h30m`, `1h 30m`, `90m`, `1d`, `1d 2h`.
   Unit required (`2` rejected), no decimals (`1.5h` rejected), no bare
@@ -285,7 +289,7 @@ Ordered by priority.
 - Each pending row → new: `POST …/worklog`, edited: `PUT …/worklog/{id}`,
   delete: `DELETE …/worklog/{id}`, all with `adjustEstimate=leave`; body =
   `timeSpentSeconds`, `started` = date + start_time in local tz, `comment`
-  = ADF (title paragraph, detail paragraph if present). Confirm shows
+  = ADF, one paragraph per description line. Confirm shows
   `push 2 new · 1 edited · 1 delete (Xh)`.
 - Background thread; UI stays responsive; progress shown as `3/7`.
 - On success entry → `pushed` with worklog id. On failure entry → `failed`

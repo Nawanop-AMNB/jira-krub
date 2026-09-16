@@ -24,8 +24,11 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
 
     if let Some(edit) = &m.edit {
         let stepping = matches!(edit.cell, Cell::Start | Cell::Duration);
+        let newline_combo = matches!(key.code, KeyCode::Enter) && (ctrl || shift || key.modifiers.contains(KeyModifiers::ALT));
         let a = match key.code {
             KeyCode::Esc => CellCancel,
+            KeyCode::Enter if edit.cell == Cell::Title && newline_combo => CellNewline,
+            KeyCode::Char('j') if edit.cell == Cell::Title && ctrl => CellNewline,
             // Enter walks start → duration → description, then leaves edit mode.
             KeyCode::Enter => CellNext,
             KeyCode::Up if stepping => CellStep(if shift { 60 } else { 15 }),
@@ -312,7 +315,7 @@ fn is_cell_action(a: &Action) -> bool {
     use Action::*;
     matches!(
         a,
-        CellChar(_) | CellBackspace | CellDelete | CellLeft | CellRight | CellHome | CellEnd | CellStep(_) | CellNext | CellCancel | CellCursor(_) | Paste(_)
+        CellChar(_) | CellNewline | CellBackspace | CellDelete | CellLeft | CellRight | CellHome | CellEnd | CellStep(_) | CellNext | CellCancel | CellCursor(_) | Paste(_)
     )
 }
 
@@ -475,6 +478,12 @@ pub fn update(app: &mut App, action: Action) {
                 }
                 ed.input.insert(c);
                 ed.error = None;
+            }
+        }
+        CellNewline => {
+            if let Some(ed) = model(app).and_then(|m| m.edit.as_mut()) {
+                ed.pristine = false;
+                ed.input.insert('\n');
             }
         }
         CellBackspace => {

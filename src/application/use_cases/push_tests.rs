@@ -11,7 +11,6 @@ fn entry(id: &str, title: &str, state: EntryState) -> Entry {
         start: StartTime::parse("13:30").unwrap(),
         seconds: 3600,
         title: title.into(),
-        detail: String::new(),
         state,
     }
 }
@@ -106,16 +105,16 @@ fn started_is_entry_date_and_start_in_local_timezone() {
 }
 
 #[test]
-fn comment_paragraphs_are_title_then_detail() {
+fn comment_paragraphs_are_one_per_description_line() {
     let mut e = entry("1", "title", EntryState::Staged);
-    e.detail = "detail".into();
+    e.title = "title\ndetail".into();
     let (items, _) = plan_all(&[e], false);
     let Op::Create(r) = &items[0].op else { panic!("expected create") };
     assert_eq!(r.comment_paragraphs, vec!["title".to_string(), "detail".to_string()]);
 }
 
 #[test]
-fn comment_paragraphs_are_empty_when_title_and_detail_are_blank() {
+fn comment_paragraphs_are_empty_when_description_is_blank() {
     let (items, _) = plan_all(&[entry("1", " ", EntryState::Staged)], true);
     let Op::Create(r) = &items[0].op else { panic!("expected create") };
     assert!(r.comment_paragraphs.is_empty());

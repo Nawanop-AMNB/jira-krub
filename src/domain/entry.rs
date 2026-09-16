@@ -50,8 +50,8 @@ pub struct Entry {
     pub date: NaiveDate,
     pub start: StartTime,
     pub seconds: u64,
+    /// Worklog comment. One line per Jira paragraph.
     pub title: String,
-    pub detail: String,
     pub state: EntryState,
 }
 
@@ -95,17 +95,11 @@ impl Entry {
     pub fn has_title(&self) -> bool {
         !self.title.trim().is_empty()
     }
-    /// Jira comment: title, blank line, detail.
+    /// Jira comment paragraphs: one per non-empty line of the description.
     pub fn comment_paragraphs(&self) -> Vec<String> {
-        let mut v = Vec::new();
-        if self.has_title() {
-            v.push(self.title.trim().to_string());
-        }
-        if !self.detail.trim().is_empty() {
-            v.push(self.detail.trim().to_string());
-        }
-        v
+        self.title.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()
     }
+
     pub fn end(&self) -> StartTime {
         self.start.plus_seconds(self.seconds)
     }

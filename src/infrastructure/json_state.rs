@@ -26,7 +26,8 @@ struct EntryDto {
     seconds: u64,
     #[serde(default)]
     title: String,
-    #[serde(default)]
+    /// Legacy (pre-0.3) second paragraph; folded into `title` on load.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     detail: String,
     state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,7 +67,7 @@ impl From<&Entry> for EntryDto {
             start: e.start.to_string(),
             seconds: e.seconds,
             title: e.title.clone(),
-            detail: e.detail.clone(),
+            detail: String::new(),
             state: state.to_string(),
             worklog_id,
             error,
@@ -98,8 +99,7 @@ impl TryFrom<EntryDto> for Entry {
             date: d.date,
             start: StartTime::parse(&d.start)?,
             seconds: d.seconds,
-            title: d.title,
-            detail: d.detail,
+            title: if d.detail.trim().is_empty() { d.title } else { format!("{}\n{}", d.title, d.detail) },
             state,
         })
     }
@@ -172,8 +172,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
             start: StartTime::parse("13:30").unwrap(),
             seconds: 5400,
-            title: "t".into(),
-            detail: "d".into(),
+            title: "t\nd".into(),
             state: EntryState::Failed { error: "boom".into(), intent: Intent::Update { worklog_id: "5".into() } },
         });
         l.watch(&IssueKey::parse("OPS-7").unwrap());

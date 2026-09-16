@@ -140,7 +140,6 @@ mod tests {
             start: StartTime::NINE,
             seconds: secs,
             title: "t".into(),
-            detail: String::new(),
             state,
         }
     }

@@ -15,7 +15,6 @@ fn entry(id: &str, seconds: u64, state: EntryState) -> Entry {
         start: StartTime::NINE,
         seconds,
         title: "t".into(),
-        detail: String::new(),
         state,
     }
 }

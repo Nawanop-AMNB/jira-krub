@@ -40,7 +40,10 @@ everywhere else.
   `Space`/double-click/drag stage 1h at 09:00, `Enter` popup, `w` toggle watchlist. `[`/`]` change day, `←`/`→` switch pane.
 - Prepare: `Enter` edits the row cell by cell (start → duration → description,
   `Enter` again leaves), or jump with `s` / `d` / `n`. First key replaces, `↑↓`
-  step 15 min, `Esc` reverts, `⌫`/`Del` remove, `p` push day.
+  step 15 min, `Esc` reverts, `⌫`/`Del` remove, `p` push day. Descriptions are
+  multi-line (one Jira paragraph per line): `Ctrl+Enter` / `Shift+Enter` where
+  the terminal supports the Kitty keyboard protocol (Ghostty, kitty, WezTerm,
+  iTerm), `Ctrl+J` anywhere.
   Rows already in Jira (below the `in jira` divider) are editable too: an edit
   marks them `~`, Backspace marks `✗` for deletion (again to undo); the change
   is sent as PUT/DELETE on the next push.

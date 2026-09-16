@@ -9,7 +9,6 @@ fn entry(id: &str, state: EntryState) -> Entry {
         start: StartTime::NINE,
         seconds: 3600,
         title: "t".into(),
-        detail: String::new(),
         state,
     }
 }
@@ -117,10 +116,8 @@ fn no_overlap_when_either_side_is_deleted() {
 fn comment_paragraphs_trims_and_skips_blank_parts() {
     let mut e = entry("a", EntryState::Staged);
     e.title = "  fix expiry  ".into();
-    e.detail = "\n details \t".into();
+    e.title = " fix expiry \n\n details \t".into();
     assert_eq!(e.comment_paragraphs(), vec!["fix expiry".to_string(), "details".to_string()]);
-    e.title = "   ".into();
-    assert_eq!(e.comment_paragraphs(), vec!["details".to_string()]);
-    e.detail = String::new();
+    e.title = "   \n  ".into();
     assert!(e.comment_paragraphs().is_empty());
 }

@@ -221,7 +221,7 @@ fn draw_day_preview(frame: &mut Frame, app: &App, m: &Model, area: Rect) {
             _ => (" ", theme::dim()),
         };
         let summary = app.remote.issue(row.key()).map(|i| i.summary.clone()).unwrap_or_default();
-        let desc = row.title();
+        let desc = row.title().replace('\n', " ⏎ ");
         let text_style = if in_jira { theme::dim() } else { Style::new() };
         let sum_w = 24usize;
         let used = 2 + 7 + 9 + 11 + sum_w + 2;

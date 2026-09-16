@@ -53,7 +53,6 @@ impl Ledger {
             start,
             seconds,
             title: String::new(),
-            detail: String::new(),
             state: EntryState::Staged,
         });
         self.entries.last().unwrap()
@@ -127,7 +126,6 @@ impl Ledger {
             start: StartTime::from_hm(local.hour() as u16, local.minute() as u16).unwrap_or(StartTime::NINE),
             seconds: w.seconds,
             title: w.comment.clone(),
-            detail: String::new(),
             state: EntryState::Pushed { worklog_id: w.id.clone() },
         });
         id
@@ -151,7 +149,6 @@ impl Ledger {
                     e.start = StartTime::from_hm(local.hour() as u16, local.minute() as u16).unwrap_or(e.start);
                     e.seconds = w.seconds;
                     e.title = w.comment.clone();
-                    e.detail.clear();
                     true
                 }
                 None => false,

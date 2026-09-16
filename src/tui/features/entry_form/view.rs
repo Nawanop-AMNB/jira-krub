@@ -17,7 +17,8 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     let ed = |f: Field| m.focus == f && m.editing;
     let sty = |f: Field| if ed(f) { theme::editing() } else { Style::new() };
     let suggestions = if ed(Field::Issue) { m.suggestions() } else { Vec::new() };
-    let height = (14 + suggestions.len() as u16).min(body.height);
+    let desc_h = (m.title.line_count() as u16).clamp(1, 4) + u16::from(ed(Field::Title));
+    let height = (13 + suggestions.len() as u16 + desc_h - 1).min(body.height);
     let area = centered(64.min(body.width), height, body);
     frame.render_widget(Clear, area);
     let block = Block::bordered().title(" log work ").border_style(theme::accent());
@@ -72,17 +73,17 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     frame.render_widget(Paragraph::new(Span::styled("e.g. 2h · 1h30m · 90m", theme::dim())), Rect { x: fx + 14, y, width: w.saturating_sub(14), height: 1 });
     y += 1;
 
-    // Title
+    // Description (multi-line: one Jira paragraph per line)
     label(frame, inner, y, "Descr.", m.focus == Field::Title);
-    m.title.render(frame, Rect { x: fx, y, width: w, height: 1 }, sty(Field::Title), false, ed(Field::Title), "what you did");
-    hits.click(Rect { x: fx, y, width: w, height: 1 }, Global::Form(Action::Focus(Field::Title)));
-    y += 1;
-
-    // Detail
-    label(frame, inner, y, "Detail", m.focus == Field::Detail);
-    m.detail.render(frame, Rect { x: fx, y, width: w, height: 1 }, sty(Field::Detail), false, ed(Field::Detail), "optional");
-    hits.click(Rect { x: fx, y, width: w, height: 1 }, Global::Form(Action::Focus(Field::Detail)));
-    y += 2;
+    let desc_rect = Rect { x: fx, y, width: w, height: desc_h };
+    m.title.render_lines(frame, desc_rect, sty(Field::Title), ed(Field::Title), "what you did");
+    hits.click(desc_rect, Global::Form(Action::Focus(Field::Title)));
+    if ed(Field::Title) {
+        let hint = "^↵ / ^J newline";
+        let hx = inner.x + inner.width - 2 - hint.chars().count() as u16;
+        frame.render_widget(Paragraph::new(Span::styled(hint, theme::dim())), Rect { x: hx, y: y + desc_h - 1, width: hint.chars().count() as u16, height: 1 });
+    }
+    y += desc_h + 1;
 
     // Info line
     let calendar = app.calendar();

@@ -43,7 +43,8 @@ impl TextInput {
         self.cursor += 1;
     }
     pub fn insert_str(&mut self, s: &str) {
-        let s: String = s.chars().filter(|c| !c.is_control()).collect();
+        // keep newlines (multi-line paste), drop other control chars
+        let s: String = s.replace("\r\n", "\n").chars().filter(|c| *c == '\n' || !c.is_control()).collect();
         let b = self.byte_at(self.cursor);
         self.text.insert_str(b, &s);
         self.cursor += s.chars().count();
@@ -78,6 +79,44 @@ impl TextInput {
     pub fn set_cursor_col(&mut self, col: usize) {
         self.cursor = col.min(self.len());
     }
+    pub fn line_count(&self) -> usize {
+        self.text.split('\n').count()
+    }
+    /// (line, column) of the cursor, in chars.
+    fn cursor_line_col(&self) -> (usize, usize) {
+        let before: String = self.text.chars().take(self.cursor).collect();
+        let line = before.matches('\n').count();
+        let col = before.rsplit('\n').next().map(|s| s.chars().count()).unwrap_or(0);
+        (line, col)
+    }
+
+    /// Multi-line render: one text line per row, scrolled so the cursor row
+    /// is visible. Used for the description field.
+    pub fn render_lines(&self, frame: &mut Frame, area: Rect, style: Style, focused: bool, placeholder: &str) {
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+        let lines: Vec<&str> = self.text.split('\n').collect();
+        let (cl, cc) = self.cursor_line_col();
+        let h = area.height as usize;
+        let top = cl.saturating_sub(h - 1);
+        if self.text.is_empty() && !focused && !placeholder.is_empty() {
+            frame.render_widget(Paragraph::new(Span::styled(placeholder, super::super::theme::dim())), Rect { height: 1, ..area });
+            return;
+        }
+        for (row, line) in lines.iter().skip(top).take(h).enumerate() {
+            let y = area.y + row as u16;
+            let width = area.width as usize;
+            let is_cursor_line = focused && top + row == cl;
+            let offset = if is_cursor_line { cc.saturating_sub(width.saturating_sub(1)) } else { 0 };
+            let visible: String = line.chars().skip(offset).take(width).collect();
+            frame.render_widget(Paragraph::new(Span::styled(format!("{visible:<width$}"), style)), Rect { x: area.x, y, width: area.width, height: 1 });
+            if is_cursor_line {
+                let x = area.x + (cc - offset) as u16;
+                frame.set_cursor_position(Position { x: x.min(area.x + area.width - 1), y });
+            }
+        }
+    }
 
     /// Draw into `area`. Places the terminal cursor when `focused`.
     pub fn render(&self, frame: &mut Frame, area: Rect, style: Style, masked: bool, focused: bool, placeholder: &str) {
@@ -85,7 +124,7 @@ impl TextInput {
         if width == 0 {
             return;
         }
-        let shown: String = if masked { "•".repeat(self.len()) } else { self.text.clone() };
+        let shown: String = if masked { "•".repeat(self.len()) } else { self.text.replace('\n', "⏎") };
         // horizontal scroll so the cursor stays visible
         let offset = self.cursor.saturating_sub(width.saturating_sub(1));
         let visible: String = shown.chars().skip(offset).take(width).collect();

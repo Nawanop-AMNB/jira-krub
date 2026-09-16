@@ -21,7 +21,6 @@ fn entry(i: &str, date: NaiveDate, state: EntryState) -> Entry {
         start: StartTime::NINE,
         seconds: 3600,
         title: "t".into(),
-        detail: String::new(),
         state,
     }
 }
@@ -52,7 +51,6 @@ fn adopt_remote_creates_a_pushed_entry_from_the_worklog() {
     assert_eq!(e.start, StartTime::parse("13:30").unwrap());
     assert_eq!(e.seconds, 5400);
     assert_eq!(e.title, "standup");
-    assert_eq!(e.detail, "");
     assert_eq!(e.state, EntryState::Pushed { worklog_id: "r1".into() });
     assert_eq!(l.staged_count(), 0);
 }
