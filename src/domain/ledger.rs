@@ -9,8 +9,6 @@ pub struct Ledger {
     watchlist: Vec<IssueKey>,
 }
 
-pub const QUICK_STAGE_SECONDS: u64 = 3600;
-
 impl Ledger {
     pub fn new(entries: Vec<Entry>, watchlist: Vec<IssueKey>) -> Self {
         Self { entries, watchlist }
@@ -46,14 +44,14 @@ impl Ledger {
         self.entries.iter().filter(|e| e.needs_push()).count()
     }
 
-    /// Quick stage: 1h, default start, no title.
-    pub fn quick_stage(&mut self, id: EntryId, key: IssueKey, date: NaiveDate, start: StartTime) -> &Entry {
+    /// Quick stage: default duration and start, no description.
+    pub fn quick_stage(&mut self, id: EntryId, key: IssueKey, date: NaiveDate, start: StartTime, seconds: u64) -> &Entry {
         self.entries.push(Entry {
             id,
             issue_key: key,
             date,
             start,
-            seconds: QUICK_STAGE_SECONDS,
+            seconds,
             title: String::new(),
             detail: String::new(),
             state: EntryState::Staged,
@@ -211,7 +209,7 @@ mod tests {
     #[test]
     fn stage_edit_remove() {
         let mut l = Ledger::default();
-        l.quick_stage(EntryId::new("1".into()), key("A-1"), d("2026-09-16"), StartTime::NINE);
+        l.quick_stage(EntryId::new("1".into()), key("A-1"), d("2026-09-16"), StartTime::NINE, 3600);
         assert_eq!(l.staged_on(d("2026-09-16")).len(), 1);
         assert!(l.update(&EntryId::new("1".into()), |e| e.seconds = 1800));
         assert_eq!(l.entry(&EntryId::new("1".into())).unwrap().seconds, 1800);
@@ -226,7 +224,7 @@ mod tests {
         use chrono::{FixedOffset, TimeZone};
         let mut l = Ledger::default();
         for (id, wid) in [("1", "w1"), ("2", "w2"), ("3", "w3")] {
-            l.quick_stage(EntryId::new(id.into()), key("A-1"), d("2026-09-16"), StartTime::NINE);
+            l.quick_stage(EntryId::new(id.into()), key("A-1"), d("2026-09-16"), StartTime::NINE, 3600);
             l.mark_pushed(&EntryId::new(id.into()), wid.into());
         }
         // entry 3 has a pending edit → must be left alone
@@ -245,7 +243,7 @@ mod tests {
     fn pushed_edit_and_delete_lifecycle() {
         let id = EntryId::new("1".into());
         let mut l = Ledger::default();
-        l.quick_stage(id.clone(), key("A-1"), d("2026-09-16"), StartTime::NINE);
+        l.quick_stage(id.clone(), key("A-1"), d("2026-09-16"), StartTime::NINE, 3600);
         l.mark_pushed(&id, "77".into());
         l.edit(&id, |e| e.seconds = 1800);
         assert_eq!(l.entry(&id).unwrap().intent(), Some(Intent::Update { worklog_id: "77".into() }));
@@ -256,7 +254,7 @@ mod tests {
         assert!(l.entry(&id).unwrap().is_deleted());
         assert!(!l.toggle_delete(&id));
         assert!(l.entry(&id).unwrap().is_pushed());
-        l.quick_stage(EntryId::new("2".into()), key("A-1"), d("2026-09-16"), StartTime::NINE);
+        l.quick_stage(EntryId::new("2".into()), key("A-1"), d("2026-09-16"), StartTime::NINE, 3600);
         assert!(l.toggle_delete(&EntryId::new("2".into())));
         assert_eq!(l.entries().len(), 1);
     }

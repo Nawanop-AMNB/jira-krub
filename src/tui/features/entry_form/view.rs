@@ -83,8 +83,8 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     y += 2;
 
     // Info line
-    let target = app.target_seconds();
-    let s = DaySummary::compute(m.date, app.today, target, app.ledger.entries(), &app.remote.worklogs);
+    let calendar = app.calendar();
+    let s = DaySummary::compute(m.date, app.today, &calendar, app.ledger.entries(), &app.remote.worklogs);
     let on_issue: u64 = m
         .resolve_issue()
         .map(|k| {
@@ -101,7 +101,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         "on issue today {} · pushed {} · need {} · staged {}",
         fmt0(on_issue),
         fmt0(s.pushed_seconds),
-        fmt0(s.remaining(target)),
+        fmt0(s.remaining()),
         fmt0(s.staged_seconds)
     );
     frame.render_widget(Paragraph::new(Span::styled(format!("  {info}"), theme::dim())), Rect { x: inner.x, y, width: inner.width, height: 1 });
@@ -116,7 +116,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     button(frame, bx + used + 2, y, "Cancel", false, Global::Form(Action::Cancel), hits);
 
     vec![
-        Hint::new("Tab", "next field", Global::Form(Action::FocusNext)),
+        Hint::new("↑↓", "field", Global::Form(Action::FocusNext)),
         Hint::new("Enter", "save", Global::Form(Action::Save)),
         Hint::new("Esc", "cancel", Global::Form(Action::Cancel)),
     ]

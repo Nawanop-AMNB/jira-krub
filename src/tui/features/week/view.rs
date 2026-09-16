@@ -23,16 +23,16 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     let box_h = (7 + 2 + 2).min(body.height.saturating_sub(1));
     let [header, week_box, below] =
         Layout::vertical([Constraint::Length(1), Constraint::Length(box_h), Constraint::Min(0)]).areas(body);
-    let target = app.target_seconds();
+    let calendar = app.calendar();
     let summaries: Vec<DaySummary> = m
         .week
         .days()
         .iter()
-        .map(|d| DaySummary::compute(*d, app.today, target, app.ledger.entries(), &app.remote.worklogs))
+        .map(|d| DaySummary::compute(*d, app.today, &calendar, app.ledger.entries(), &app.remote.worklogs))
         .collect();
 
     draw_header(frame, app, m, header, hits);
-    draw_week(frame, app, m, &summaries, week_box, hits);
+    draw_week(frame, app, m, &summaries, &calendar, week_box, hits);
     if below.height >= 3 {
         draw_day_preview(frame, app, m, below);
     }
@@ -85,7 +85,7 @@ fn draw_header(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut H
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], area: Rect, hits: &mut HitRegistry) {
+fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], calendar: &crate::domain::WorkCalendar, area: Rect, hits: &mut HitRegistry) {
     let block = Block::bordered().title(" week ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -95,7 +95,6 @@ fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], 
         scroll_down: Some(Global::Week(Action::NextWeek)),
         ..Default::default()
     });
-    let target = app.target_seconds();
     let bar_w = inner.width.saturating_sub(LEFT_W + RIGHT_W).max(MIN_BAR) as usize;
 
     for (i, s) in summaries.iter().enumerate() {
@@ -108,11 +107,21 @@ fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], 
         let is_today = s.date == app.today;
 
         let day_label = format!("{} {:02}", s.date.weekday(), s.date.day());
+        let target = s.target;
         let (bar, hours_txt, status_txt, status_style) = match s.status {
-            DayStatus::Weekend => (String::new(), String::new(), String::new(), theme::dim()),
+            DayStatus::Off => {
+                // Holidays are named; plain weekends stay blank unless hours were logged.
+                let name = calendar.holiday(s.date).map(|n| format!("off · {n}"));
+                let logged = s.pushed_seconds + s.staged_seconds > 0;
+                match (name, logged) {
+                    (Some(n), _) => (String::new(), if logged { hours(s.pushed_seconds) } else { String::new() }, n, theme::dim()),
+                    (None, true) => (String::new(), hours(s.pushed_seconds), "off".into(), theme::dim()),
+                    (None, false) => (String::new(), String::new(), String::new(), theme::dim()),
+                }
+            }
             DayStatus::Future => ("─".repeat(bar_w), "–".into(), "future".into(), theme::dim()),
             DayStatus::Full => (bar(s, target, bar_w), hours(s.pushed_seconds), "✓".into(), theme::good()),
-            DayStatus::Short => (bar(s, target, bar_w), hours(s.pushed_seconds), format!("need {}", hours(s.remaining(target))), theme::warn()),
+            DayStatus::Short => (bar(s, target, bar_w), hours(s.pushed_seconds), format!("need {}", hours(s.remaining())), theme::warn()),
             DayStatus::Empty => (bar(s, target, bar_w), "0".into(), "empty".into(), theme::bad()),
             DayStatus::TodayEmpty => (bar(s, target, bar_w), "0".into(), format!("need {}", hours(target)), theme::warn()),
         };
@@ -149,7 +158,7 @@ fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], 
             Paragraph::new(Span::styled("─".repeat(inner.width as usize), theme::dim())),
             Rect { x: inner.x, y, width: inner.width, height: 1 },
         );
-        let weekly = app.weekly_target_seconds();
+        let weekly = calendar.target_between(m.week.monday(), m.week.sunday());
         let pushed: u64 = summaries.iter().map(|s| s.pushed_seconds).sum();
         let staged: u64 = summaries.iter().map(|s| s.staged_seconds).sum();
         let staged_n: usize = summaries.iter().map(|s| s.staged_count).sum();

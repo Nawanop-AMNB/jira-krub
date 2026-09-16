@@ -27,7 +27,7 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         let a = match key.code {
             KeyCode::Esc => CellCancel,
             // Enter walks start → duration → description, then leaves edit mode.
-            KeyCode::Enter | KeyCode::Tab => CellNext,
+            KeyCode::Enter => CellNext,
             KeyCode::Up if stepping => CellStep(if shift { 60 } else { 15 }),
             KeyCode::Down if stepping => CellStep(if shift { -60 } else { -15 }),
             KeyCode::Left => CellLeft,
@@ -156,6 +156,8 @@ pub fn on_search_done(app: &mut App, req_id: u64, query: String, result: Result<
 
 fn stage(app: &mut App, issue: &Issue, auto_watch: bool) {
     let default_start = app.default_start();
+    let quick = app.quick_stage_seconds();
+    let auto_watch = auto_watch && app.auto_watch();
     let Screen::Day(m) = &app.screen else { return };
     let date = m.date;
     if auto_watch && app.ledger.watch(&issue.key) {
@@ -163,7 +165,7 @@ fn stage(app: &mut App, issue: &Issue, auto_watch: bool) {
         app.set_status(format!("watching {}", issue.key));
     }
     let id = new_entry_id();
-    app.ledger.quick_stage(id.clone(), issue.key.clone(), date, default_start);
+    app.ledger.quick_stage(id.clone(), issue.key.clone(), date, default_start, quick);
     app.save_ledger();
     // Point the prepare cursor at the new row but keep focus where it is,
     // so several tickets can be staged in a row.
@@ -173,7 +175,7 @@ fn stage(app: &mut App, issue: &Issue, auto_watch: bool) {
     };
     let m = model(app).unwrap();
     m.prepare_sel = idx;
-    app.set_status(format!("staged 1h on {} — Tab then d duration · n description · s start", issue.key));
+    app.set_status(format!("staged {} on {} — → then d duration · n description · s start", duration::format(quick), issue.key));
 }
 
 fn selected_ticket(app: &App, m: &Model) -> Option<super::rows::TicketRow> {

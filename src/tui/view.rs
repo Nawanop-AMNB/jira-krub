@@ -1,6 +1,6 @@
 use super::action::Action;
 use super::app::{App, Overlay, Screen, StatusKind};
-use super::features::{day, entry_form, setup, week};
+use super::features::{connect, day, entry_form, settings, week};
 use super::hit::HitRegistry;
 use super::theme;
 use ratatui::Frame;
@@ -25,7 +25,8 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut HitRegistry) {
     let [body, footer] = Layout::vertical([Constraint::Min(3), Constraint::Length(1)]).areas(frame.area());
 
     let hints = match &app.screen {
-        Screen::Setup(m) => setup::view(frame, app, m, body, hits),
+        Screen::Connect(m) => connect::view(frame, app, m, body, hits),
+        Screen::Settings(m) => settings::view(frame, app, m, body, hits),
         Screen::Week(m) => week::view(frame, app, m, body, hits),
         Screen::Day(m) => day::view(frame, app, m, body, hits),
     };

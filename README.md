@@ -10,10 +10,11 @@ still short of 8h. Spec: [SPEC.md](SPEC.md).
 cargo run --release
 ```
 
-First launch opens the setup screen: Jira site (`https://company.atlassian.net`),
+First launch opens the connect screen: Jira site (`https://company.atlassian.net`),
 email, API token (https://id.atlassian.com/manage-profile/security/api-tokens).
 `Test connection` calls `/myself`; `Save & start` writes
-`~/.config/jira-krub/config.toml` (mode 600) and opens the week view.
+`~/.config/jira-krub/config.toml` (mode 600, sections `[connection]`, `[global]`,
+`[year.YYYY]`) and opens the week view.
 `JIRA_API_TOKEN` in the environment overrides the saved token.
 
 Local state (staged entries, watchlist) lives in
@@ -21,9 +22,18 @@ Local state (staged entries, watchlist) lives in
 
 ## Screens
 
-**Main** — one row per day: bar, hours, status (`✓` / `need 1h` / `empty`), staged count.
-`Enter` open day · `a` add via popup · `p` push week · `←→` week · `t` today ·
-`r` sync · `,` settings · `q` quit.
+**Main** — one row per day: bar, pushed hours, status (`✓` / `need 1h` / `empty` /
+`off · holiday`), `+Xh staged`. `Enter` open day · `a` add via popup · `p` push week ·
+`←→` week · `t` today · `r` sync · `,` settings · `q` quit.
+
+**Settings** (`,`) — `Tab` switches the Global tab (target hours/day, workdays,
+default start, quick-stage duration, history lookback, auto-watch, Jira
+connection) and the Year tab (`[` `]` pick year; target override, public
+holidays). `↑↓` walk fields, `Enter` toggles / edits, `^S` saves. Off days and
+holidays show as `off` and drop out of the weekly target.
+
+Key convention: `Tab` only ever switches tabs; `↑↓` and `Enter` walk fields
+everywhere else.
 
 **Day view** — tickets on the left, prepare-logwork on the right.
 - Tickets: `/` search (local filter instantly, Jira search after 300 ms),

@@ -14,7 +14,7 @@ const TOKEN_URL: &str = "id.atlassian.com/manage-profile/security/api-tokens";
 
 pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitRegistry) -> Vec<Hint> {
     let area = centered(70.min(body.width), 15.min(body.height), body);
-    let block = Block::bordered().title(" jira-krub · setup ").border_style(theme::accent());
+    let block = Block::bordered().title(" jira-krub · connect ").border_style(theme::accent());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -45,19 +45,19 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     y += 2;
 
     let mut x = inner.x + 14;
-    x += button(frame, x, y, "Test connection", m.focus == Focus::TestBtn, Global::Setup(Action::Test), hits) + 3;
-    x += button(frame, x, y, "Save & start", m.focus == Focus::SaveBtn, Global::Setup(Action::Save), hits) + 3;
+    x += button(frame, x, y, "Test connection", m.focus == Focus::TestBtn, Global::Connect(Action::Test), hits) + 3;
+    x += button(frame, x, y, "Save & start", m.focus == Focus::SaveBtn, Global::Connect(Action::Save), hits) + 3;
     let quit_label = if app.gateway.is_some() { "Back" } else { "Quit" };
-    button(frame, x, y, quit_label, m.focus == Focus::QuitBtn, Global::Setup(Action::Quit), hits);
+    button(frame, x, y, quit_label, m.focus == Focus::QuitBtn, Global::Connect(Action::Quit), hits);
     y += 2;
     if y < inner.y + inner.height {
         hint_line(frame, inner, y, &format!("saved to {} (mode 600)", app.deps.config_store.location()));
     }
 
     vec![
-        Hint::new("Tab", "next", Global::Setup(Action::FocusNext)),
-        Hint::new("Enter", "test / save", Global::Setup(Action::Activate)),
-        Hint::new("Esc", if app.gateway.is_some() { "back" } else { "quit" }, Global::Setup(Action::Quit)),
+        Hint::new("↑↓", "field", Global::Connect(Action::FocusNext)),
+        Hint::new("Enter", "test / save", Global::Connect(Action::Activate)),
+        Hint::new("Esc", if app.gateway.is_some() { "back" } else { "quit" }, Global::Connect(Action::Quit)),
     ]
 }
 
@@ -89,7 +89,7 @@ fn field(
     input.render(frame, box_rect, style, masked, focused, placeholder);
     hits.add(HitArea {
         rect: box_rect,
-        click: Some(Global::Setup(Action::Focus(focus))),
+        click: Some(Global::Connect(Action::Focus(focus))),
         ..Default::default()
     });
     if let Some(e) = err {

@@ -1,4 +1,4 @@
-//! First-run / settings screen: site, email, token, test, save.
+//! Connect screen: site, email, token, test, save. First run, 401, or from Settings.
 
 mod model;
 mod update;

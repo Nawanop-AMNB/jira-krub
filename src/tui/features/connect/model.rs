@@ -50,6 +50,8 @@ pub struct Model {
     pub banner: Option<String>,
     pub save_after_test: bool,
     pub had_config: bool,
+    /// Opened from Settings → `Jira connection…`; Esc/Save return there.
+    pub from_settings: bool,
 }
 
 impl Model {
@@ -73,6 +75,7 @@ impl Model {
             banner,
             save_after_test: false,
             had_config: existing.is_some(),
+            from_settings: false,
         }
     }
 

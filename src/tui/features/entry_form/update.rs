@@ -15,8 +15,6 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         KeyCode::Enter if m.focus == Field::Issue => AcceptIssue,
         KeyCode::Enter => Save,
         KeyCode::Char('s') if ctrl => Save,
-        KeyCode::Tab => FocusNext,
-        KeyCode::BackTab => FocusPrev,
         KeyCode::Up => match m.focus {
             Field::Issue => SuggestPrev,
             Field::Start => StartStep(if shift { 60 } else { 15 }),

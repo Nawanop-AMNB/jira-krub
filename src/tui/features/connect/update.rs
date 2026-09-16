@@ -12,8 +12,6 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let a = match key.code {
         KeyCode::Esc => Quit,
-        KeyCode::Tab => FocusNext,
-        KeyCode::BackTab => FocusPrev,
         KeyCode::Down => FocusNext,
         KeyCode::Up => FocusPrev,
         KeyCode::Enter => Activate,
@@ -30,12 +28,12 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         KeyCode::Char('q') => Quit,
         _ => return None,
     };
-    Some(Global::Setup(a))
+    Some(Global::Connect(a))
 }
 
 fn model(app: &mut App) -> Option<&mut Model> {
     match &mut app.screen {
-        Screen::Setup(m) => Some(m),
+        Screen::Connect(m) => Some(m),
         _ => None,
     }
 }
@@ -127,8 +125,13 @@ fn save(app: &mut App) {
         }
     }
     app.config = Some(config);
+    let from_settings = model(app).is_some_and(|m| m.from_settings);
     let today = app.today;
-    app.go_week(Week::containing(today), today);
+    if from_settings {
+        app.go_settings();
+    } else {
+        app.go_week(Week::containing(today), today);
+    }
     app.set_status(format!("saved to {}", app.deps.config_store.location()));
     app.start_sync();
 }
@@ -168,8 +171,11 @@ pub fn update(app: &mut App, action: Action) {
     use Action::*;
     match action {
         Quit => {
-            // Settings from main → back. First run → exit.
-            if app.gateway.is_some() {
+            // From Settings → back to Settings. From main (401) → main. First run → exit.
+            let from_settings = model(app).is_some_and(|m| m.from_settings);
+            if from_settings {
+                app.go_settings();
+            } else if app.gateway.is_some() {
                 let today = app.today;
                 app.go_week(Week::containing(today), today);
             } else {

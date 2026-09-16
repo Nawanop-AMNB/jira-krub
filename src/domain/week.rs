@@ -1,5 +1,5 @@
-use super::{Entry, RemoteWorklog};
-use chrono::{Datelike, Days, NaiveDate, Weekday};
+use super::{Entry, RemoteWorklog, WorkCalendar};
+use chrono::{Datelike, Days, NaiveDate};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,10 +34,6 @@ impl Week {
     }
 }
 
-pub fn is_workday(d: NaiveDate) -> bool {
-    !matches!(d.weekday(), Weekday::Sat | Weekday::Sun)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DayStatus {
     /// ≥ target
@@ -49,7 +45,8 @@ pub enum DayStatus {
     /// today with zero hours
     TodayEmpty,
     Future,
-    Weekend,
+    /// Weekend, non-workday, or public holiday.
+    Off,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +56,8 @@ pub struct DaySummary {
     pub staged_seconds: u64,
     pub staged_count: usize,
     pub status: DayStatus,
+    /// Seconds expected on this day (0 when off).
+    pub target: u64,
 }
 
 impl DaySummary {
@@ -69,8 +68,8 @@ impl DaySummary {
     }
     /// Hours still missing **in Jira**. Staged work never counts: green means
     /// Jira has it, so a forgotten push stays visible.
-    pub fn remaining(&self, target: u64) -> u64 {
-        target.saturating_sub(self.pushed_seconds)
+    pub fn remaining(&self) -> u64 {
+        self.target.saturating_sub(self.pushed_seconds)
     }
 
     /// Pushed seconds = remote worklogs ∪ local pushed entries whose worklog
@@ -78,10 +77,11 @@ impl DaySummary {
     pub fn compute(
         date: NaiveDate,
         today: NaiveDate,
-        target: u64,
+        calendar: &WorkCalendar,
         entries: &[Entry],
         remote: &[RemoteWorklog],
     ) -> Self {
+        let target = calendar.target_for(date);
         let remote_today: Vec<&RemoteWorklog> = remote.iter().filter(|w| w.local_date() == date).collect();
         let remote_secs: HashMap<&str, u64> = remote_today.iter().map(|w| (w.id.as_str(), w.seconds)).collect();
         let mut pushed: u64 = remote_today.iter().map(|w| w.seconds).sum();
@@ -106,8 +106,8 @@ impl DaySummary {
             }
         }
         // Status reflects Jira only; staged hours are shown separately.
-        let status = if !is_workday(date) {
-            DayStatus::Weekend
+        let status = if !calendar.is_workday(date) {
+            DayStatus::Off
         } else if date > today {
             DayStatus::Future
         } else if pushed >= target {
@@ -119,7 +119,7 @@ impl DaySummary {
         } else {
             DayStatus::Empty
         };
-        Self { date, pushed_seconds: pushed, staged_seconds: staged, staged_count, status }
+        Self { date, pushed_seconds: pushed, staged_seconds: staged, staged_count, status, target }
     }
 }
 
@@ -159,6 +159,7 @@ mod tests {
     fn summary_merges_and_classifies() {
         let today = d("2026-09-16");
         let target = 8 * 3600;
+        let cal = WorkCalendar::simple(target);
         let remote = vec![RemoteWorklog {
             id: "r1".into(),
             issue_key: IssueKey::parse("A-1").unwrap(),
@@ -172,23 +173,27 @@ mod tests {
             entry("3", "2026-09-16", 7200, EntryState::Staged),
             entry("4", "2026-09-16", 900, EntryState::Failed { error: "x".into(), intent: crate::domain::Intent::Create }),
         ];
-        let s = DaySummary::compute(today, today, target, &entries, &remote);
+        let s = DaySummary::compute(today, today, &cal, &entries, &remote);
         assert_eq!(s.pushed_seconds, 5400);
         assert_eq!(s.staged_seconds, 8100);
         assert_eq!(s.staged_count, 2);
         assert_eq!(s.status, DayStatus::Short, "5400 pushed → short regardless of staged");
-        assert_eq!(s.remaining(target), 8 * 3600 - 5400, "staged hours do not reduce what is missing in Jira");
+        assert_eq!(s.remaining(), 8 * 3600 - 5400, "staged hours do not reduce what is missing in Jira");
 
         let entries2 = vec![entry("5", "2026-09-16", 1800, EntryState::Modified { worklog_id: "r1".into() })];
-        let s2 = DaySummary::compute(today, today, target, &entries2, &remote);
+        let s2 = DaySummary::compute(today, today, &cal, &entries2, &remote);
         assert_eq!((s2.pushed_seconds, s2.staged_seconds, s2.staged_count), (0, 1800, 1));
         let entries3 = vec![entry("6", "2026-09-16", 3600, EntryState::Deleted { worklog_id: "r1".into() })];
-        let s3 = DaySummary::compute(today, today, target, &entries3, &remote);
+        let s3 = DaySummary::compute(today, today, &cal, &entries3, &remote);
         assert_eq!((s3.pushed_seconds, s3.staged_seconds, s3.staged_count), (0, 0, 1));
 
-        assert_eq!(DaySummary::compute(d("2026-09-15"), today, target, &[], &[]).status, DayStatus::Empty);
-        assert_eq!(DaySummary::compute(d("2026-09-17"), today, target, &[], &[]).status, DayStatus::Future);
-        assert_eq!(DaySummary::compute(d("2026-09-19"), today, target, &[], &[]).status, DayStatus::Weekend);
-        assert_eq!(DaySummary::compute(today, today, target, &[], &[]).status, DayStatus::TodayEmpty);
+        assert_eq!(DaySummary::compute(d("2026-09-15"), today, &cal, &[], &[]).status, DayStatus::Empty);
+        assert_eq!(DaySummary::compute(d("2026-09-17"), today, &cal, &[], &[]).status, DayStatus::Future);
+        assert_eq!(DaySummary::compute(d("2026-09-19"), today, &cal, &[], &[]).status, DayStatus::Off);
+        assert_eq!(DaySummary::compute(today, today, &cal, &[], &[]).status, DayStatus::TodayEmpty);
+        let mut hol = WorkCalendar::simple(target);
+        hol.holidays.insert(d("2026-09-15"), "holiday".into());
+        let h = DaySummary::compute(d("2026-09-15"), today, &hol, &[], &[]);
+        assert_eq!((h.status, h.target, h.remaining()), (DayStatus::Off, 0, 0));
     }
 }

@@ -14,15 +14,18 @@ use ratatui::widgets::{Block, Paragraph};
 
 pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitRegistry) -> Vec<Hint> {
     let rows = prepare_rows(app, m);
-    let target = app.target_seconds();
-    let summary = DaySummary::compute(m.date, app.today, target, app.ledger.entries(), &app.remote.worklogs);
+    let calendar = app.calendar();
+    let summary = DaySummary::compute(m.date, app.today, &calendar, app.ledger.entries(), &app.remote.worklogs);
 
     let staged = staged_total(&rows);
+    let need = match calendar.off_reason(m.date) {
+        Some(reason) => format!("off · {reason}"),
+        None => format!("need {}", fmt0(summary.remaining())),
+    };
     let title = format!(
-        " ◀ {} ▶ · pushed {} · need {}{} ",
+        " ◀ {} ▶ · pushed {} · {need}{} ",
         m.date.format("%a %d %b %Y"),
         fmt0(pushed_total(&rows)),
-        fmt0(summary.remaining(target)),
         if staged > 0 { format!(" · +{} staged", fmt0(staged)) } else { String::new() }
     );
     let block = Block::bordered().title(title).border_style(theme::accent());

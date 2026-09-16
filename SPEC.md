@@ -1,6 +1,6 @@
 # jira-krub — Product Spec
 
-**Status:** draft v0.7 · 2026-09-15
+**Status:** draft v0.8 · 2026-09-15
 **Owner:** ka.nawanop (sole user)
 **Target:** Jira Cloud (`*.atlassian.net`), native worklog dialog (no Tempo)
 
@@ -39,8 +39,8 @@ inaccurate logs, and the low-grade stress of knowing days are short.
 - **Time tracking timers.** Entries are typed after the fact.
 - **Remaining-estimate management.** Company does not use it; worklogs are sent
   with `adjustEstimate=leave` and the field is never shown.
-- **Holiday calendar.** Only weekends are treated as non-workdays. No holiday
-  config or built-in calendar.
+- **Built-in holiday calendar.** Holidays are entered by hand per year in
+  Settings (R16); no country calendar is bundled.
 - **Jira Server / Data Center.**
 
 ## 4. Persona
@@ -111,8 +111,9 @@ Ordered by priority.
 - Shown when no config exists, or when startup auth returns 401/403
   (prefilled, with "token rejected"). Network failure on startup does **not**
   open setup; main opens in offline mode with last state.
-- Fields (Tab order): Jira site, email, API token; buttons
-  `[ Test connection ] [ Save & start ] [ Quit ]`.
+- Fields (`↑`/`↓` order): Jira site, email, API token; buttons
+  `[ Test connection ] [ Save & start ] [ Quit ]`. Enter on a field tests,
+  on a button activates. Tab does nothing.
 - **Site**: free-form URL, custom domains allowed. Rules: must be `https://`
   (typed without scheme → auto-prefixed; `http://` → red "must be https");
   host `[a-z0-9.-]` with at least one dot, optional port; everything after
@@ -240,9 +241,9 @@ Ordered by priority.
     `s` start (type `HH:MM` or `HHMM`, or `↑/↓` step 15 min, `Shift+↑/↓`
     step 1 h) · `d` duration (type Jira grammar, or `↑/↓` step 15 min,
     `Shift+↑/↓` 1 h) · `n` description. `Enter` on a row starts at the
-    start cell; `Enter`/`Tab` commit and move start → duration → description,
-    and a final `Enter` leaves edit mode. **Leaving the cell in any
-    way saves it** — Enter, Tab, clicking another cell/row/pane, changing
+    start cell; `Enter` commits and moves start → duration → description,
+    and a final `Enter` leaves edit mode (Tab is not a walk key). **Leaving the cell in any
+    way saves it** — Enter, clicking another cell/row/pane, changing
     day, pushing. Values stay on the row (and in `state.json`) until the
     batch push. Only `Esc` reverts. Unparseable text on unfocus keeps the
     old value and shows an error in the status line.
@@ -254,13 +255,13 @@ Ordered by priority.
     entries are allowed and flagged with `!`.
   - Title is optional. Empty title shows `(no title)` dimmed; the worklog is
     pushed without a comment.
-- `Tab` switches pane. `p` pushes this day only (R6).
+- `←`/`→` switch pane. `p` pushes this day only (R6).
 - AC: from tickets pane, `Space` on `ABC-411` then `u` `2h` Enter, `n`
   `fix expiry` Enter produces a staged row `09:00 2h ABC-411 fix expiry`
   and the main screen shows `1 staged` on that day.
 
 **R5. Entry form (popup)**
-- Fields, tab order: issue (fuzzy over tickets pane list, prefilled), date
+- Fields, `↑`/`↓` order: issue (fuzzy over tickets pane list, prefilled), date
   (`←/→`), start (default `09:00`, `↑/↓` 15 min, typeable), duration, title,
   detail (optional, single line in v1).
 - Duration grammar = Jira's: integer + unit, units `w d h m`, any order,
@@ -337,6 +338,14 @@ Ordered by priority.
 - Keyboard remains complete; the mouse never has an action the keyboard lacks.
 - Note: with capture on, native text selection needs Shift+drag.
 
+**R9a. Key conventions, app-wide**
+- `Tab` = switch tab content on screens that have tabs (Settings). It never
+  walks fields or cells anywhere. Screens without tabs ignore it.
+- `↑`/`↓` walk fields; `Enter` activates / commits and moves on; `←`/`→`
+  move the text cursor inside a field (and switch pane in the day view).
+- `[` `]` step the "unit" of the screen: day in the day view, year in
+  Settings.
+
 **R9b. Esc = step back, everywhere**
 
 | Where | Esc |
@@ -356,6 +365,66 @@ Ordered by priority.
 **R10. Terminal safety**
 - Raw mode and alternate screen restored on normal exit, `q`, Ctrl-C, panic.
 - Any blocking network call happens off the UI thread.
+
+**R16. Connect screen (rename of R0) and Settings**
+
+*Connect* = the R0 screen: site, email, token, test, save. Reached on first
+run, on 401 during sync, or from Settings → `Jira connection…`. Nothing
+else changes there.
+
+*Settings* = new screen, `,` from main. Two tabs; **`Tab`** (or click)
+switches Global ↔ Year. `↑`/`↓` walk fields down to `[ Save ] [ Cancel ]`;
+Enter toggles a checkbox / opens a list row / activates a button. On the
+Year tab `[` `]` change the year. `Save` writes `config.toml`,
+`Esc`/`Cancel` discards.
+
+**Global tab** — applies to every year.
+
+| Field | Default | Used by |
+|-------|---------|---------|
+| Target hours / day | 8 | day status, `need`, weekly target |
+| Workdays | Mon–Fri | which days count as `empty`/target; others show blank |
+| Default start time | 09:00 | new entries |
+| Quick-stage duration | 1h | `Space` / double-click / drag |
+| History lookback (weeks) | 3 | sync window |
+| Auto-watch staged-from-search | on | staging a Jira search result adds it to the watchlist |
+| `Jira connection…` | — | opens Connect, prefilled |
+
+**Year tab** — `◀ ▶` pick the year (defaults to the visible week's year;
+years with no config show defaults).
+
+| Field | Default | Effect |
+|-------|---------|--------|
+| Target hours / day (override) | blank = global | wins over global for that year |
+| Public holidays | none | list of `date · name`; add / edit / remove |
+
+Holiday semantics: a holiday (or non-workday) shows `off` dimmed instead
+of red `empty`, never needs hours, and drops out of the weekly target
+(`/ 32h` in a week with one holiday). Logging on a holiday is still allowed
+and counts.
+
+Storage — `config.toml` gains sections; old flat keys still load:
+```toml
+[connection]           # base_url, email, api_token
+[global]               # hours_per_day, workdays, default_start_time,
+                       # quick_stage, lookback_weeks, auto_watch
+[year.2026]            # hours_per_day (optional)
+holidays = [{ date = "2026-01-01", name = "New Year" }]
+```
+
+AC:
+- Given a holiday on Wed, when the week is shown, then Wed reads `off`
+  (dim), the week target is 32h, and Thu is still `empty` red.
+- Given year 2026 override = 7h, when a day has 7h pushed, then it is ✓;
+  in 2025 the same day needs 8h.
+- Given workdays exclude Fri, then Fri shows blank like a weekend.
+- Given Settings changed and saved, then main re-renders immediately with
+  the new targets without a re-sync; lookback changes trigger a re-sync.
+- Given `Jira connection…` then Connect opens prefilled; `Esc` returns to
+  Settings, not main.
+
+Esc table addition: Settings → main (unsaved changes discarded, no prompt
+unless a field was edited — then `discard changes? [y/n]`).
 
 ### P1 — Should have (fast follow)
 
@@ -409,7 +478,7 @@ Three screens. All mockups at 80 columns.
 │                                                                  │
 │               [ Test connection ]   [ Save & start ]   [ Quit ]  │
 └──────────────────────────────────────────────────────────────────┘
- Tab next · Shift+Tab back · Enter test/save · Esc quit
+ ↑↓ field · Enter test/save · Esc quit
 ```
 
 **Main — week summary**
@@ -440,7 +509,7 @@ Three screens. All mockups at 80 columns.
 │                                  │                                           │
 │ [Space stage] [Enter popup] [w]  │ [s start] [d dur] [n title] [e] [⌫]       │
 └──────────────────────────────────────────────────────────────────────────────┘
- [p push day]  [Tab pane]  [← →] day  [Esc main]
+ [p push day]  [← →] pane  [ [ ] ] day  [Esc main]
 ```
 
 **Popup — entry form**
@@ -481,7 +550,7 @@ Resolved from Q&A on 2026-09-15.
 | Inline editing | Start/duration/description edited in-cell on the prepare pane; popup only for new entries |
 | Re-sort timing | Prepare rows re-sort by start time only when the Enter walk ends or focus leaves the row, never between cells |
 | Remaining estimate | Unused; always `adjustEstimate=leave`, field never shown |
-| Holidays | None. Weekends only |
+| Holidays / workdays | Per-year holiday list and global workdays in Settings (R16); shown as `off`, excluded from targets |
 | Storage | Single JSON state file; SQLite not needed at this scale |
 | First run | In-app setup screen (site URL any https host, email, masked token, test before save) instead of example-config-and-exit |
 
@@ -509,7 +578,9 @@ No hard deadline. Phase 2 is the first version worth using daily.
 
 | Req | Status | Notes |
 |-----|--------|-------|
-| R0 setup | done | any https host (plus loopback http for a fake server), test-before-save, mode 600 |
+| R0 connect | done | renamed from setup; `↑↓` walk, no Tab; returns to Settings when opened from there |
+| R16 settings | done | Global / Year tabs (`Tab` switches), workdays, holidays, per-year target; `off` days excluded from targets; config.toml sections with legacy load |
+| R9a key conventions | done | Tab never walks fields; `↑↓`/Enter walk; `[` `]` step day/year |
 | R1 main | done | bar shows pushed █ / staged ▓; `N staged` clickable |
 | R2 issue list | done | watchlist first, mine, then "logged recently"; Jira search results auto-watch when staged |
 | R3 state | done | `state.json`, DTO-mapped, atomic write |

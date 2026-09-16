@@ -1,12 +1,12 @@
 use super::action::{Action, PushScope};
 use super::deps::Deps;
-use super::features::{day, entry_form, push, setup, week};
+use super::features::{connect, day, entry_form, push, settings, week};
 use super::hit::HitRegistry;
 use super::msg::{Msg, SyncError};
 use crate::application::ports::{GatewayErrorKind, Window};
 use crate::application::use_cases::sync::{self, SyncInput};
 use crate::application::{Config, JiraGateway};
-use crate::domain::{Issue, IssueKey, Ledger, RemoteWorklog, StartTime, Week};
+use crate::domain::{Issue, IssueKey, Ledger, RemoteWorklog, StartTime, Week, WorkCalendar};
 use crate::infrastructure::Worker;
 use anyhow::Result;
 use chrono::{Days, Local, NaiveDate};
@@ -48,7 +48,8 @@ impl RemoteCache {
 }
 
 pub enum Screen {
-    Setup(setup::Model),
+    Connect(connect::Model),
+    Settings(settings::Model),
     Week(week::Model),
     Day(day::Model),
 }
@@ -112,7 +113,7 @@ impl App {
         let screen = if gateway.is_some() {
             Screen::Week(week::Model::new(today))
         } else {
-            Screen::Setup(setup::Model::new(config.as_ref().map(|c| &c.credentials), None))
+            Screen::Connect(connect::Model::new(config.as_ref().map(|c| &c.credentials), None))
         };
         let mut app = Self {
             deps,
@@ -155,13 +156,20 @@ impl App {
     // ---- config helpers -----------------------------------------------
 
     pub fn default_start(&self) -> StartTime {
-        self.config.as_ref().map(|c| c.default_start).unwrap_or(StartTime::NINE)
+        self.config.as_ref().map(|c| c.global.default_start).unwrap_or(StartTime::NINE)
     }
-    pub fn target_seconds(&self) -> u64 {
-        self.config.as_ref().map(|c| c.target_seconds()).unwrap_or(8 * 3600)
+    pub fn quick_stage_seconds(&self) -> u64 {
+        self.config.as_ref().map(|c| c.global.quick_stage_seconds).unwrap_or(3600)
     }
-    pub fn weekly_target_seconds(&self) -> u64 {
-        self.config.as_ref().map(|c| c.weekly_target_seconds()).unwrap_or(40 * 3600)
+    pub fn auto_watch(&self) -> bool {
+        self.config.as_ref().map(|c| c.global.auto_watch).unwrap_or(true)
+    }
+    pub fn lookback_weeks(&self) -> u32 {
+        self.config.as_ref().map(|c| c.global.lookback_weeks).unwrap_or(3)
+    }
+    /// Workdays, holidays and targets from config (defaults when not set up).
+    pub fn calendar(&self) -> WorkCalendar {
+        self.config.as_ref().map(|c| c.calendar()).unwrap_or_default()
     }
 
     // ---- status -------------------------------------------------------
@@ -186,9 +194,19 @@ impl App {
 
     // ---- navigation ---------------------------------------------------
 
-    pub fn go_setup(&mut self, banner: Option<String>) {
+    pub fn go_connect(&mut self, banner: Option<String>) {
         self.overlay = None;
-        self.screen = Screen::Setup(setup::Model::new(self.config.as_ref().map(|c| &c.credentials), banner));
+        self.screen = Screen::Connect(connect::Model::new(self.config.as_ref().map(|c| &c.credentials), banner));
+    }
+    pub fn go_settings(&mut self) {
+        self.overlay = None;
+        match &self.config {
+            Some(cfg) => {
+                let year = chrono::Datelike::year(&self.visible_week().monday());
+                self.screen = Screen::Settings(settings::Model::from_config(cfg, year));
+            }
+            None => self.go_connect(None),
+        }
     }
     pub fn go_week(&mut self, week: Week, selected: NaiveDate) {
         self.overlay = None;
@@ -236,7 +254,7 @@ impl App {
         match &self.screen {
             Screen::Week(m) => m.week,
             Screen::Day(m) => Week::containing(m.date),
-            Screen::Setup(_) => Week::containing(self.today),
+            Screen::Connect(_) | Screen::Settings(_) => Week::containing(self.today),
         }
     }
 
@@ -245,7 +263,7 @@ impl App {
     fn wanted_window(&self) -> Window {
         let visible = self.visible_week();
         let current = Week::containing(self.today);
-        let from = visible.monday().min(current.monday()) - Days::new(21);
+        let from = visible.monday().min(current.monday()) - Days::new(7 * self.lookback_weeks() as u64);
         let to = visible.sunday().max(current.sunday());
         Window { from, to }
     }
@@ -287,7 +305,7 @@ impl App {
 
     pub fn on_msg(&mut self, msg: Msg) {
         match msg {
-            Msg::ConnectionTested { creds, outcome } => setup::on_tested(self, creds, outcome),
+            Msg::ConnectionTested { creds, outcome } => connect::on_tested(self, creds, outcome),
             Msg::Synced(Ok(out)) => {
                 self.remote.syncing = false;
                 self.remote.offline = false;
@@ -313,7 +331,7 @@ impl App {
             Msg::Synced(Err(e)) => {
                 self.remote.syncing = false;
                 match e.kind {
-                    GatewayErrorKind::Unauthorized => self.go_setup(Some("✗ 401 token rejected — create a new one and paste below".into())),
+                    GatewayErrorKind::Unauthorized => self.go_connect(Some("✗ 401 token rejected — create a new one and paste below".into())),
                     GatewayErrorKind::Network => {
                         self.remote.offline = true;
                         self.set_error(format!("offline: {}", e.message));
@@ -354,7 +372,8 @@ impl App {
             },
             Some(Overlay::Form(m)) => entry_form::keys(m, &key),
             None => match &self.screen {
-                Screen::Setup(m) => setup::keys(m, &key),
+                Screen::Connect(m) => connect::keys(m, &key),
+                Screen::Settings(m) => settings::keys(m, &key),
                 Screen::Week(m) => week::keys(m, &key),
                 Screen::Day(m) => day::keys(m, &key),
             },
@@ -369,7 +388,8 @@ impl App {
             Some(Overlay::Form(_)) => Some(Action::Form(entry_form::Action::Paste(text))),
             Some(Overlay::Confirm(_)) => None,
             None => match &self.screen {
-                Screen::Setup(_) => Some(Action::Setup(setup::Action::Paste(text))),
+                Screen::Connect(_) => Some(Action::Connect(connect::Action::Paste(text))),
+                Screen::Settings(_) => Some(Action::Settings(settings::Action::Paste(text))),
                 Screen::Day(_) => Some(Action::Day(day::Action::Paste(text))),
                 Screen::Week(_) => None,
             },
@@ -434,7 +454,7 @@ impl App {
                 }
             }
             Action::Refresh => self.start_sync(),
-            Action::OpenSettings => self.go_setup(None),
+            Action::OpenSettings => self.go_settings(),
             Action::ConfirmYes => {
                 if let Some(Overlay::Confirm(c)) = self.overlay.take() {
                     self.dispatch(c.yes);
@@ -447,7 +467,8 @@ impl App {
             }
             Action::PushRequest(scope) => push::request(self, scope),
             Action::PushConfirmed(scope) => push::confirmed(self, scope),
-            Action::Setup(a) => setup::update(self, a),
+            Action::Connect(a) => connect::update(self, a),
+            Action::Settings(a) => settings::update(self, a),
             Action::Week(a) => week::update(self, a),
             Action::Day(a) => day::update(self, a),
             Action::Form(a) => entry_form::update(self, a),

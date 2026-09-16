@@ -1,4 +1,4 @@
-use super::features::{day, entry_form, setup, week};
+use super::features::{connect, day, entry_form, settings, week};
 use crate::domain::Week;
 use chrono::NaiveDate;
 
@@ -10,7 +10,8 @@ pub enum Action {
     ForceQuit,
     Refresh,
     OpenSettings,
-    Setup(setup::Action),
+    Connect(connect::Action),
+    Settings(settings::Action),
     Week(week::Action),
     Day(day::Action),
     Form(entry_form::Action),

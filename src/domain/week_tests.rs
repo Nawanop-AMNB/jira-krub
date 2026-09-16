@@ -1,4 +1,4 @@
-use super::{DayStatus, DaySummary, Entry, EntryId, EntryState, Intent, IssueKey, RemoteWorklog, StartTime};
+use super::{DayStatus, DaySummary, Entry, EntryId, EntryState, Intent, IssueKey, RemoteWorklog, StartTime, WorkCalendar};
 use chrono::{Local, NaiveDate, TimeZone};
 
 const TARGET: u64 = 8 * 3600;
@@ -32,7 +32,7 @@ fn remote(id: &str, seconds: u64) -> RemoteWorklog {
 }
 
 fn summary(entries: &[Entry], remote: &[RemoteWorklog]) -> DaySummary {
-    DaySummary::compute(day(), day(), TARGET, entries, remote)
+    DaySummary::compute(day(), day(), &WorkCalendar::simple(TARGET), entries, remote)
 }
 
 #[test]
@@ -84,9 +84,9 @@ fn weekend_status_wins_over_totals() {
     let saturday = NaiveDate::from_ymd_opt(2026, 9, 19).unwrap();
     let mut full = entry("1", TARGET, EntryState::Staged);
     full.date = saturday;
-    let s = DaySummary::compute(saturday, day(), TARGET, &[full], &[]);
+    let s = DaySummary::compute(saturday, day(), &WorkCalendar::simple(TARGET), &[full], &[]);
     assert_eq!(s.total(), TARGET);
-    assert_eq!(s.status, DayStatus::Weekend);
+    assert_eq!(s.status, DayStatus::Off);
 }
 
 #[test]
@@ -95,11 +95,11 @@ fn status_is_full_only_when_pushed_equals_target() {
     let s = summary(&[entry("1", TARGET / 2, EntryState::Staged)], &[remote("r1", TARGET / 2)]);
     assert_eq!(s.total(), TARGET);
     assert_eq!(s.status, DayStatus::Short);
-    assert_eq!(s.remaining(TARGET), TARGET / 2);
+    assert_eq!(s.remaining(), TARGET / 2);
     // all pushed → full
     let s = summary(&[], &[remote("r1", TARGET)]);
     assert_eq!(s.status, DayStatus::Full);
-    assert_eq!(s.remaining(TARGET), 0);
+    assert_eq!(s.remaining(), 0);
 }
 
 #[test]
@@ -107,5 +107,5 @@ fn staged_only_day_is_still_empty() {
     let s = summary(&[entry("1", TARGET, EntryState::Staged)], &[]);
     assert_eq!(s.staged_seconds, TARGET);
     assert_eq!(s.status, DayStatus::TodayEmpty);
-    assert_eq!(s.remaining(TARGET), TARGET);
+    assert_eq!(s.remaining(), TARGET);
 }
