@@ -18,6 +18,9 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         KeyCode::Char('s') if ctrl => Save,
         KeyCode::Up => Up,
         KeyCode::Down => Down,
+        // Year tab: arrows change the year unless a text cell is being typed in.
+        KeyCode::Left if m.tab == Tab::Year && !in_text(m) => PrevYear,
+        KeyCode::Right if m.tab == Tab::Year && !in_text(m) => NextYear,
         KeyCode::Left => Left,
         KeyCode::Right => Right,
         KeyCode::Home => Home,
@@ -240,7 +243,11 @@ pub fn update(app: &mut App, action: Action) {
             let Some(m) = model(app) else { return };
             m.year += if matches!(action, PrevYear) { -1 } else { 1 };
             m.year_draft(&cfg);
-            m.y_focus = YearField::Hours;
+            // keep the cursor where it was so repeated ←/→ keep stepping years
+            let order = m.year_order();
+            if !order.contains(&m.y_focus) {
+                m.y_focus = YearField::AddHoliday;
+            }
         }
         Up | Down => {
             let delta: i32 = if matches!(action, Up) { -1 } else { 1 };

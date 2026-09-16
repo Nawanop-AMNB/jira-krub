@@ -375,7 +375,8 @@ else changes there.
 *Settings* = new screen, `,` from main. Two tabs; **`Tab`** (or click)
 switches Global ↔ Year. `↑`/`↓` walk fields down to `[ Save ] [ Cancel ]`;
 Enter toggles a checkbox / opens a list row / activates a button. On the
-Year tab `[` `]` change the year. `Save` writes `config.toml`,
+Year tab `←`/`→` (or `[` `]`) change the year; inside a text cell the
+arrows move the cursor instead. `Save` writes `config.toml`,
 `Esc`/`Cancel` discards.
 
 **Global tab** — applies to every year.

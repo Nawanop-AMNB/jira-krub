@@ -49,8 +49,9 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         hits.click(Rect { x, y, width: 1, height: 1 }, Global::Settings(Action::PrevYear));
         hits.click(Rect { x: x + 2, y, width: 1, height: 1 }, Global::Settings(Action::NextYear));
     }
-    let hint = "Tab switches";
-    frame.render_widget(Paragraph::new(Span::styled(hint, theme::dim())), Rect { x: inner.x + inner.width - PAD - hint.len() as u16, y, width: hint.len() as u16, height: 1 });
+    let hint = if m.tab == Tab::Year { "Tab switches · ←→ year" } else { "Tab switches" };
+    let hw = hint.chars().count() as u16;
+    frame.render_widget(Paragraph::new(Span::styled(hint, theme::dim())), Rect { x: inner.x + inner.width - PAD - hw, y, width: hw, height: 1 });
 
     let mut y = y + 2;
     y = match m.tab {
