@@ -72,7 +72,8 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
 }
 
 fn draw_tickets(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut HitRegistry) {
-    let focused = m.pane == Pane::Tickets && m.edit.is_none();
+    // the search box is a row of this pane: while it has focus the list is not
+    let focused = m.pane == Pane::Tickets && m.edit.is_none() && !m.search_focused;
     let header_style = if focused { theme::accent().add_modifier(Modifier::BOLD) } else { theme::dim() };
     frame.render_widget(Paragraph::new(Span::styled(" tickets", header_style)), Rect { x: area.x, y: area.y, width: area.width, height: 1 });
 
