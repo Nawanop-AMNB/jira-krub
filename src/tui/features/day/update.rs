@@ -549,7 +549,7 @@ pub fn update(app: &mut App, action: Action) {
         CellCursor(col) => {
             if let Some(ed) = model(app).and_then(|m| m.edit.as_mut()) {
                 ed.pristine = false;
-                ed.input.set_cursor_col(col as usize);
+                ed.input.set_cursor_display_col(col as usize);
             }
         }
         CellStep(delta) => {

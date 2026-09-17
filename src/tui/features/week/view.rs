@@ -6,6 +6,8 @@ use crate::tui::features::day::rows::{PrepareRow, prepare_rows_for};
 use crate::tui::hit::{HitArea, HitRegistry};
 use crate::tui::theme;
 use crate::tui::view::Hint;
+use crate::tui::widgets::text::{display_width, pad_to_width};
+use crate::tui::widgets::truncate_to_width;
 use chrono::Datelike;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -57,7 +59,7 @@ fn draw_header(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut H
     let mut spans: Vec<Span> = Vec::new();
     let mut x = area.x;
     let mut push = |spans: &mut Vec<Span>, text: String, style: Style, action: Option<Global>| {
-        let w = text.chars().count() as u16;
+        let w = display_width(&text) as u16;
         if let Some(a) = action {
             hits.click(Rect { x, y: area.y, width: w, height: 1 }, a);
         }
@@ -232,9 +234,9 @@ fn draw_day_preview(frame: &mut Frame, app: &App, m: &Model, area: Rect) {
             Span::styled(format!("{:<7}", row.start().to_string()), text_style),
             Span::styled(format!("{:<9}", duration::format(row.seconds())), text_style),
             Span::styled(format!("{:<11}", row.key().to_string()), if in_jira { theme::dim() } else { theme::issue_key() }),
-            Span::styled(format!("{:<sum_w$}", truncate(&summary, sum_w)), theme::dim()),
+            Span::styled(pad_to_width(&truncate_to_width(&summary, sum_w), sum_w), theme::dim()),
             Span::raw("  "),
-            Span::styled(truncate(if desc.trim().is_empty() { "(no description)" } else { &desc }, desc_w), text_style),
+            Span::styled(truncate_to_width(if desc.trim().is_empty() { "(no description)" } else { &desc }, desc_w), text_style),
         ]);
         frame.render_widget(Paragraph::new(line), Rect { x: inner.x, y, width: inner.width, height: 1 });
         if in_jira {
@@ -268,10 +270,3 @@ pub fn hours(secs: u64) -> String {
     duration::format(secs).replace(' ', "")
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        s.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
-    }
-}

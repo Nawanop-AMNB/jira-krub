@@ -1,6 +1,6 @@
 [package]
 name = "jira-krub"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Terminal UI for staging and batch-pushing Jira worklogs"
 repository = "https://github.com/Nawanop-AMNB/jira-krub"
@@ -25,3 +25,5 @@ reqwest = { version = "0.13.5", default-features = false, features = ["blocking"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"
+unicode-segmentation = "1"
+unicode-width = "0.2"

@@ -6,6 +6,7 @@ use crate::tui::app::App;
 use crate::tui::hit::{HitArea, HitRegistry};
 use crate::tui::theme;
 use crate::tui::view::Hint;
+use crate::tui::widgets::truncate_to_width;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -125,7 +126,7 @@ fn draw_tickets(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut 
         let star = if r.watched { "*" } else { " " };
         let key = format!("{:<9}", r.issue.key);
         let summary_w = (list.width as usize).saturating_sub(2 + 1 + 1 + 9 + 1);
-        let summary = truncate(&r.issue.summary, summary_w);
+        let summary = truncate_to_width(&r.issue.summary, summary_w);
         let key_style = match r.section {
             Section::History => theme::dim(),
             _ => theme::issue_key(),
@@ -258,7 +259,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         // the cursor and the ▲▼ steppers; later columns shift right.
         let edit_w = |cell: Cell, base: u16| -> u16 {
             match editing.filter(|ed| ed.cell == cell) {
-                Some(ed) => base.max(ed.input.text().chars().count() as u16 + 1) + if cell == Cell::Title { 0 } else { 2 },
+                Some(ed) => base.max(ed.input.display_width() as u16 + 1) + if cell == Cell::Title { 0 } else { 2 },
                 None => base,
             }
         };
@@ -302,7 +303,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
                     if selected {
                         style = style.add_modifier(Modifier::REVERSED);
                     }
-                    frame.render_widget(Paragraph::new(Span::styled(truncate(&text, rect.width as usize), style)), rect);
+                    frame.render_widget(Paragraph::new(Span::styled(truncate_to_width(&text, rect.width as usize), style)), rect);
                     hits.add(HitArea {
                         rect,
                         click: Some(Global::Day(Action::EditCellOf(i, cell))),
@@ -327,7 +328,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         if selected {
             sum_style = sum_style.add_modifier(Modifier::REVERSED);
         }
-        frame.render_widget(Paragraph::new(Span::styled(truncate(&summary, c_sum as usize), sum_style)), Rect { x: x_sum, y, width: c_sum, height: 1 });
+        frame.render_widget(Paragraph::new(Span::styled(truncate_to_width(&summary, c_sum as usize), sum_style)), Rect { x: x_sum, y, width: c_sum, height: 1 });
         if overlaps && !deleted {
             frame.render_widget(Paragraph::new(Span::styled("!", theme::warn())), Rect { x: x_key + C_KEY, y, width: 1, height: 1 });
         }
@@ -338,7 +339,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
             y += 1;
             if y < bottom {
                 frame.render_widget(
-                    Paragraph::new(Span::styled(format!("      ↳ {}", truncate(error, area.width.saturating_sub(8) as usize)), theme::bad())),
+                    Paragraph::new(Span::styled(format!("      ↳ {}", truncate_to_width(error, area.width.saturating_sub(8) as usize)), theme::bad())),
                     Rect { x: area.x, y, width: area.width, height: 1 },
                 );
             }
@@ -353,10 +354,3 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        s.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
-    }
-}

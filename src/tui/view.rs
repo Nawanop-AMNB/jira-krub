@@ -3,6 +3,7 @@ use super::app::{App, Overlay, Screen, StatusKind};
 use super::features::{connect, day, entry_form, settings, week};
 use super::hit::HitRegistry;
 use super::theme;
+use super::widgets::text::display_width;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
@@ -67,7 +68,7 @@ fn draw_footer(frame: &mut Frame, app: &App, hints: &[Hint], area: Rect, hits: &
 }
 
 fn draw_confirm(frame: &mut Frame, text: &str, body: Rect, hits: &mut HitRegistry) {
-    let width = (text.chars().count() as u16 + 6).clamp(30, body.width.saturating_sub(4).max(30));
+    let width = (display_width(text) as u16 + 6).clamp(30, body.width.saturating_sub(4).max(30));
     let area = centered(width, 5, body);
     frame.render_widget(Clear, area);
     let block = Block::bordered().title(" confirm ").border_style(theme::warn());

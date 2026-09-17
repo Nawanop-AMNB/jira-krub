@@ -5,6 +5,7 @@ use crate::tui::app::App;
 use crate::tui::hit::HitRegistry;
 use crate::tui::theme;
 use crate::tui::view::{Hint, button, centered};
+use crate::tui::widgets::truncate_to_width;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -37,14 +38,14 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     if let Some(s) = m.issue_summary() {
         let sx = fx + 15;
         frame.render_widget(
-            Paragraph::new(Span::styled(truncate(s, (inner.x + inner.width).saturating_sub(sx) as usize), theme::dim())),
+            Paragraph::new(Span::styled(truncate_to_width(s, (inner.x + inner.width).saturating_sub(sx) as usize), theme::dim())),
             Rect { x: sx, y, width: (inner.x + inner.width).saturating_sub(sx), height: 1 },
         );
     }
     y += 1;
     for (i, s) in suggestions.iter().enumerate() {
         let style = if i == m.suggestion_sel { theme::selected() } else { theme::dim() };
-        let text = format!("{:<10} {}", s.key, truncate(&s.summary, w.saturating_sub(11) as usize));
+        let text = format!("{:<10} {}", s.key, truncate_to_width(&s.summary, w.saturating_sub(11) as usize));
         frame.render_widget(Paragraph::new(Span::styled(text, style)), Rect { x: fx, y, width: w, height: 1 });
         y += 1;
     }
@@ -145,13 +146,6 @@ fn arrows(frame: &mut Frame, hits: &mut HitRegistry, x: u16, y: u16, glyphs: (&s
     hits.click(Rect { x: x + 2, y, width: 1, height: 1 }, right);
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        s.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
-    }
-}
 
 fn fmt0(secs: u64) -> String {
     if secs == 0 { "0".into() } else { duration::format(secs) }
