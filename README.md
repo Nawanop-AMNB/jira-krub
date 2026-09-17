@@ -19,10 +19,20 @@ curl -fsSL https://raw.githubusercontent.com/Nawanop-AMNB/jira-krub/main/install
 ```
 
 Puts `jira-krub` and the short alias `jrk` in `~/.local/bin`. Rerun the same
-line to upgrade. `JIRA_KRUB_VERSION=v0.3.0` pins a release,
+line to upgrade. `JIRA_KRUB_VERSION=v0.3.1` pins a release,
 `JIRA_KRUB_INSTALL=/some/dir` changes the target.
 
 From source: `cargo install --path .` (installs both names).
+
+Uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Nawanop-AMNB/jira-krub/main/uninstall.sh | sh
+```
+
+Removes the binary and the alias, keeps your config and state so a reinstall
+resumes where you were. Add `-s -- --purge` after `sh` to delete the config
+(including the API token) and the local state as well.
 
 ## First run
 

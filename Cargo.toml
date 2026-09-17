@@ -1,6 +1,6 @@
 [package]
 name = "jira-krub"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Terminal UI for staging and batch-pushing Jira worklogs"
 repository = "https://github.com/Nawanop-AMNB/jira-krub"
