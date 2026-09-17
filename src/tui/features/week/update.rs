@@ -11,6 +11,7 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         KeyCode::Char('q') => return Some(Global::Quit),
         KeyCode::Char('r') => return Some(Global::Refresh),
         KeyCode::Char(',') => return Some(Global::OpenSettings),
+        KeyCode::Tab => return Some(Global::SwitchMainTab),
         KeyCode::Char('[') | KeyCode::Char('h') | KeyCode::Left => PrevWeek,
         KeyCode::Char(']') | KeyCode::Char('l') | KeyCode::Right => NextWeek,
         KeyCode::Char('t') => Today,

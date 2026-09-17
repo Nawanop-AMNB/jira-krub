@@ -3,7 +3,7 @@
 use super::action::Action;
 use super::app::{App, Overlay};
 use super::features::{entry_form, week};
-use super::test_support::{Harness, harness, script_with_issues};
+use super::test_support::{Harness, go_worklog, harness, script_with_issues};
 use crate::application::test_support::{issue, key};
 use crate::domain::StartTime;
 
@@ -27,6 +27,7 @@ fn typed(app: &mut App, text: &str) {
 /// Open the popup and walk to the duration field with `KAN-1` chosen.
 fn form_on_duration(name: &str) -> Harness {
     let mut h = harness(name, script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     typed(&mut h.app, "KAN-1");
     for _ in 0..3 {
@@ -39,6 +40,7 @@ fn form_on_duration(name: &str) -> Harness {
 #[test]
 fn the_start_time_stepped_in_the_popup_is_the_one_that_is_staged() {
     let mut h = harness("form-start-kept", script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     typed(&mut h.app, "KAN-1");
     form_action(&mut h.app, entry_form::Action::Commit(1)); // Issue → Date
@@ -112,6 +114,7 @@ fn the_staged_duration_is_snapped_to_a_quarter_of_an_hour() {
 #[test]
 fn saving_without_a_matching_issue_is_refused() {
     let mut h = harness("form-no-issue", script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     typed(&mut h.app, "nothing-like-this");
     form_action(&mut h.app, entry_form::Action::Save);

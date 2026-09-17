@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn ranks_exact_then_prefix() {
-        let mk = |k: &str| Issue { key: IssueKey::parse(k).unwrap(), summary: String::new(), status: String::new() };
+        let mk = |k: &str| Issue::new(IssueKey::parse(k).unwrap(), "", "");
         let out = rank(vec![mk("KAN-10"), mk("KAN-12"), mk("KAN-1"), mk("KAN-2"), mk("KAN-3"), mk("KAN-4"), mk("KAN-5")], "kan-1");
         let keys: Vec<&str> = out.iter().map(|i| i.key.as_str()).collect();
         assert_eq!(keys, vec!["KAN-1", "KAN-10", "KAN-12", "KAN-2", "KAN-3"]);

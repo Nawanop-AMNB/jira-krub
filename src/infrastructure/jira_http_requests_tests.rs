@@ -280,6 +280,19 @@ fn a_per_issue_fetch_keeps_only_my_worklogs() {
     assert_eq!(ids, vec!["mine"], "a shared ticket carries other people's time");
 }
 
+/// R17: the tasks tab shows due dates and staleness, so every search must ask
+/// Jira for those fields — without regressing the ones the week view needs.
+#[test]
+fn search_requests_due_and_updated_fields() {
+    let (base, seen) = fake_jira(vec![json!({ "issues": [], "isLast": true })]);
+    gateway(&base).search_issues("assignee = currentUser()", 50).expect("searched");
+
+    let fields = only(&seen).query().get("fields").cloned().expect("a fields parameter");
+    for want in ["summary", "status", "duedate", "updated"] {
+        assert!(fields.contains(want), "fields {fields:?} must request {want}");
+    }
+}
+
 #[test]
 fn the_embedded_search_page_keeps_only_my_worklogs() {
     let (base, _seen) = fake_jira(vec![json!({

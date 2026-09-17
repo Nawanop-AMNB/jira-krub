@@ -9,7 +9,7 @@ use super::action::Action;
 use super::app::{App, Overlay, Screen};
 use super::features::day::rows::prepare_rows;
 use super::features::{connect, day, entry_form, settings, week};
-use super::test_support::{Harness, harness, script_with_issues};
+use super::test_support::{Harness, go_worklog, harness, script_with_issues};
 use crate::application::test_support::{issue, key};
 use crate::domain::{EntryId, StartTime};
 use chrono::NaiveDate;
@@ -103,7 +103,7 @@ fn startup_syncs_through_the_gateway_and_fills_the_ticket_list() {
         assert!(calls.jql.first().is_some_and(|j| j.contains("currentUser")), "{:?}", calls.jql);
     }
     assert_eq!(h.app.remote.mine.len(), 1);
-    assert!(matches!(h.app.screen, Screen::Week(_)), "a saved config skips the connect screen");
+    assert!(matches!(h.app.screen, Screen::Tasks(_)), "a saved config skips the connect screen and opens My tasks");
 }
 
 // ---- day view: quick stage (R4) -------------------------------------------
@@ -336,7 +336,7 @@ fn discarding_dirty_settings_leaves_the_config_unchanged() {
     h.app.dispatch(Action::ConfirmYes);
 
     assert_eq!(h.app.config.as_ref(), Some(&before));
-    assert!(matches!(h.app.screen, Screen::Week(_)));
+    assert!(matches!(h.app.screen, Screen::Tasks(_)), "back to the tab Settings was opened from");
 }
 
 // ---- settings → connect (R16) ---------------------------------------------
@@ -376,6 +376,7 @@ fn quitting_connect_opened_from_settings_returns_to_settings() {
 #[test]
 fn add_entry_on_the_week_screen_opens_the_form_already_in_edit_mode() {
     let mut h = harness("form-open", script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     let m = form_model(&h.app);
     assert!(m.editing, "a walk form opens with its first field open");
@@ -385,6 +386,7 @@ fn add_entry_on_the_week_screen_opens_the_form_already_in_edit_mode() {
 #[test]
 fn commit_walks_the_form_from_issue_to_date_to_start() {
     let mut h = harness("form-walk", script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     form_action(&mut h.app, entry_form::Action::Commit(1));
     assert_eq!(dbg_of(&form_model(&h.app).focus), "Date");
@@ -395,6 +397,7 @@ fn commit_walks_the_form_from_issue_to_date_to_start() {
 #[test]
 fn revert_restores_the_form_field_from_its_backup() {
     let mut h = harness("form-revert", script_with_issues(vec![issue("KAN-1")]));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     form_action(&mut h.app, entry_form::Action::Commit(1));
     form_action(&mut h.app, entry_form::Action::Commit(1));
@@ -411,6 +414,7 @@ fn revert_restores_the_form_field_from_its_backup() {
 fn saving_the_form_stages_an_entry_with_the_typed_duration() {
     let mut h = harness("form-save", script_with_issues(vec![issue("KAN-1")]));
     let date = h.app.today;
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::AddEntry));
     for c in "KAN-1".chars() {
         form_action(&mut h.app, entry_form::Action::Char(c));

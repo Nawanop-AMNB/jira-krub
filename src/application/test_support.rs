@@ -6,7 +6,9 @@ use crate::domain::{Issue, IssueKey, RemoteWorklog};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, FixedOffset, TimeZone};
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
 /// What the fake answers with. Anything left `None`/empty falls back to a
 /// sensible success value (see each method).
@@ -30,6 +32,10 @@ pub struct Script {
     /// Default: echoes the request back with the given worklog id.
     pub update_result: Option<Result<RemoteWorklog, GatewayError>>,
     pub delete_error: Option<GatewayError>,
+    /// Simulated per-request latency, applied inside every gateway method
+    /// that represents one network round trip. Lets concurrency tests prove
+    /// requests overlap instead of running one after another.
+    pub delay: Duration,
 }
 
 #[derive(Default, Debug)]
@@ -51,15 +57,48 @@ pub struct Calls {
 pub struct FakeGateway {
     script: Mutex<Script>,
     calls: Mutex<Calls>,
+    in_flight: AtomicUsize,
+    peak_in_flight: AtomicUsize,
+}
+
+/// Marks one gateway call as in flight for the lifetime of the guard, and
+/// applies the script's simulated latency before the call's own work runs.
+struct InFlightGuard<'a> {
+    gateway: &'a FakeGateway,
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.gateway.in_flight.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl FakeGateway {
     pub fn new(script: Script) -> Self {
-        Self { script: Mutex::new(script), calls: Mutex::new(Calls::default()) }
+        Self { script: Mutex::new(script), calls: Mutex::new(Calls::default()), in_flight: AtomicUsize::new(0), peak_in_flight: AtomicUsize::new(0) }
     }
 
     pub fn calls(&self) -> std::sync::MutexGuard<'_, Calls> {
-        self.calls.lock().unwrap()
+        self.calls.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The largest number of gateway calls this fake ever had in flight at
+    /// once. Reset only by constructing a new `FakeGateway`.
+    pub fn peak_in_flight(&self) -> usize {
+        self.peak_in_flight.load(Ordering::SeqCst)
+    }
+
+    /// Call at the top of every trait method that represents one network
+    /// round trip: records the call as in flight and sleeps for the
+    /// configured delay before returning the guard that un-counts it.
+    fn enter(&self) -> InFlightGuard<'_> {
+        let now_in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+        self.peak_in_flight.fetch_max(now_in_flight, Ordering::SeqCst);
+        let delay = self.script.lock().unwrap_or_else(|e| e.into_inner()).delay;
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        InFlightGuard { gateway: self }
     }
 }
 
@@ -85,6 +124,7 @@ fn echo(req: &NewWorklog, id: &str) -> RemoteWorklog {
 
 impl JiraGateway for FakeGateway {
     fn myself(&self) -> Result<Me> {
+        let _guard = self.enter();
         self.calls().myself += 1;
         let s = self.script.lock().unwrap();
         if let Some(e) = &s.myself_error {
@@ -94,6 +134,7 @@ impl JiraGateway for FakeGateway {
     }
 
     fn search_issues(&self, jql: &str, _max: usize) -> Result<Vec<Issue>> {
+        let _guard = self.enter();
         self.calls().jql.push(jql.to_string());
         match self.script.lock().unwrap().searches.pop_front() {
             Some(Ok(v)) => Ok(v),
@@ -116,6 +157,7 @@ impl JiraGateway for FakeGateway {
     }
 
     fn get_issue(&self, key: &IssueKey) -> Result<Issue> {
+        let _guard = self.enter();
         self.calls().get_issue.push(key.clone());
         self.script
             .lock()
@@ -127,6 +169,7 @@ impl JiraGateway for FakeGateway {
     }
 
     fn my_worklogs(&self, key: &IssueKey, account_id: &str, window: Option<&Window>) -> Result<Vec<RemoteWorklog>> {
+        let _guard = self.enter();
         self.calls().my_worklogs.push((key.clone(), account_id.to_string(), window.copied()));
         let s = self.script.lock().unwrap();
         if let Some(e) = &s.worklogs_error {
@@ -177,7 +220,7 @@ pub fn key(s: &str) -> IssueKey {
 }
 
 pub fn issue(k: &str) -> Issue {
-    Issue { key: key(k), summary: format!("summary of {k}"), status: "To Do".into() }
+    Issue::new(key(k), format!("summary of {k}"), "To Do")
 }
 
 /// A remote worklog started at 09:00 in UTC+7 on the given day.

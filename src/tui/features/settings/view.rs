@@ -5,6 +5,7 @@ use crate::tui::hit::HitRegistry;
 use crate::tui::theme;
 use crate::tui::view::{Hint, button, centered};
 use crate::tui::widgets::TextInput;
+use crate::tui::widgets::tab_bar;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -34,16 +35,12 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
 
     // ---- tab bar ----
     let y = inner.y;
-    let mut x = inner.x + PAD;
-    for (tab, label) in [(Tab::Global, "Global".to_string()), (Tab::Year, format!("Year {}", m.year))] {
-        let active = m.tab == tab;
-        let text = format!(" {label} ");
-        let w = text.chars().count() as u16;
-        let style = if active { theme::title() } else { theme::dim() };
-        frame.render_widget(Paragraph::new(Span::styled(text, style)), Rect { x, y, width: w, height: 1 });
-        hits.click(Rect { x, y, width: w, height: 1 }, Global::Settings(Action::SetTab(tab)));
-        x += w + 2;
-    }
+    let year_label = format!("Year {}", m.year);
+    let tabs = [
+        ("Global", m.tab == Tab::Global, Global::Settings(Action::SetTab(Tab::Global))),
+        (year_label.as_str(), m.tab == Tab::Year, Global::Settings(Action::SetTab(Tab::Year))),
+    ];
+    let x = tab_bar::draw(frame, Rect { x: inner.x + PAD, y, width: inner.width.saturating_sub(PAD), height: 1 }, &tabs, hits);
     if m.tab == Tab::Year {
         frame.render_widget(Paragraph::new(Span::styled("◀ ▶", theme::accent())), Rect { x, y, width: 3, height: 1 });
         hits.click(Rect { x, y, width: 1, height: 1 }, Global::Settings(Action::PrevYear));

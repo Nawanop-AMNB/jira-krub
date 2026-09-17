@@ -6,7 +6,7 @@ pub mod ports;
 pub mod use_cases;
 
 pub use config::{Config, Credentials};
-pub use ports::{ConfigStore, JiraGateway, JiraGatewayFactory, StateStore};
+pub use ports::{ConfigStore, JiraGateway, JiraGatewayFactory, StateStore, UrlOpener};
 #[cfg(test)]
 pub mod test_support;
 #[cfg(test)]

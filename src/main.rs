@@ -7,7 +7,7 @@ mod tui;
 
 use anyhow::Result;
 use application::JiraGatewayFactory;
-use infrastructure::{HttpJiraGateway, JsonStateStore, TomlConfigStore};
+use infrastructure::{HttpJiraGateway, JsonStateStore, SystemUrlOpener, TomlConfigStore};
 use std::sync::Arc;
 use tui::deps::Deps;
 
@@ -22,6 +22,7 @@ fn main() -> Result<()> {
         config_store: Arc::new(TomlConfigStore::default_location()?),
         state_store: Arc::new(JsonStateStore::default_location()?),
         gateway_factory,
+        opener: Arc::new(SystemUrlOpener),
     };
     tui::run(deps)
 }

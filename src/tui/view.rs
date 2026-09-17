@@ -1,8 +1,9 @@
 use super::action::Action;
-use super::app::{App, Overlay, Screen, StatusKind};
-use super::features::{connect, day, entry_form, settings, week};
+use super::app::{App, MainTab, Overlay, Screen, StatusKind};
+use super::features::{connect, day, entry_form, settings, tasks, week};
 use super::hit::HitRegistry;
 use super::theme;
+use super::widgets::tab_bar;
 use super::widgets::text::display_width;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -28,7 +29,17 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut HitRegistry) {
     let hints = match &app.screen {
         Screen::Connect(m) => connect::view(frame, app, m, body, hits),
         Screen::Settings(m) => settings::view(frame, app, m, body, hits),
-        Screen::Week(m) => week::view(frame, app, m, body, hits),
+        // The two main-screen tabs share a strip on the top row (R17).
+        Screen::Week(m) => {
+            let (strip, rest) = main_tab_strip(body);
+            draw_main_tabs(frame, app, strip, hits);
+            week::view(frame, app, m, rest, hits)
+        }
+        Screen::Tasks(m) => {
+            let (strip, rest) = main_tab_strip(body);
+            draw_main_tabs(frame, app, strip, hits);
+            tasks::view(frame, app, m, rest, hits)
+        }
         Screen::Day(m) => day::view(frame, app, m, body, hits),
     };
 
@@ -42,6 +53,39 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut HitRegistry) {
     };
 
     draw_footer(frame, app, &hints, footer, hits);
+}
+
+/// Splits the main screen into its tab row and the body of the open tab.
+fn main_tab_strip(body: Rect) -> (Rect, Rect) {
+    // one blank row under the strip so the tabs read as a level above their content
+    let [strip, _gap, rest] = Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Min(0)]).areas(body);
+    (strip, rest)
+}
+
+/// `My Tasks | Worklogs`, with the signed-in name (or offline / syncing)
+/// right-aligned on the same row.
+fn draw_main_tabs(frame: &mut Frame, app: &App, area: Rect, hits: &mut HitRegistry) {
+    let tasks_open = matches!(app.screen, Screen::Tasks(_));
+    let tabs = [
+        ("My Tasks", tasks_open, Action::SetMainTab(MainTab::Tasks)),
+        ("Worklogs", !tasks_open, Action::SetMainTab(MainTab::Worklog)),
+    ];
+    let after = tab_bar::draw(frame, Rect { x: area.x + 1, ..area }, &tabs, hits);
+
+    let (text, style) = if app.remote.syncing {
+        ("⟳ syncing".to_string(), theme::dim())
+    } else if app.remote.offline {
+        ("offline".to_string(), theme::bad())
+    } else if !app.remote.display_name.is_empty() {
+        (app.remote.display_name.clone(), theme::dim())
+    } else {
+        return;
+    };
+    let w = display_width(&text) as u16;
+    let x = (area.x + area.width).saturating_sub(w + 1).max(after);
+    if x + w <= area.x + area.width {
+        frame.render_widget(Paragraph::new(Span::styled(text, style)), Rect { x, y: area.y, width: w, height: 1 });
+    }
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, hints: &[Hint], area: Rect, hits: &mut HitRegistry) {

@@ -1,3 +1,4 @@
+pub mod tab_bar;
 pub mod text;
 pub mod text_input;
 

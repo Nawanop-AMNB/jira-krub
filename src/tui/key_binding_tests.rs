@@ -8,7 +8,7 @@
 use super::action::Action;
 use super::app::{App, Screen};
 use super::features::{day, settings, week};
-use super::test_support::{harness, script_with_issues};
+use super::test_support::{go_worklog, harness, script_with_issues};
 use crate::application::test_support::issue;
 use chrono::{Days, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -115,6 +115,7 @@ fn escape_in_a_filled_search_box_clears_it_before_leaving_it() {
 #[test]
 fn enter_on_the_week_screen_opens_the_selected_day() {
     let mut h = harness("keys-week-open-day", script_with_issues(Vec::new()));
+    go_worklog(&mut h.app);
     press(&mut h.app, KeyCode::Char('t'));
     let selected = week_model(&h.app).selected_date();
     press(&mut h.app, KeyCode::Enter);
@@ -124,6 +125,7 @@ fn enter_on_the_week_screen_opens_the_selected_day() {
 #[test]
 fn j_and_k_move_the_week_cursor_down_and_up() {
     let mut h = harness("keys-week-cursor", script_with_issues(Vec::new()));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::Select(2)));
     press(&mut h.app, KeyCode::Char('j'));
     assert_eq!(week_model(&h.app).selected, 3, "j goes down the week");
@@ -135,6 +137,7 @@ fn j_and_k_move_the_week_cursor_down_and_up() {
 #[test]
 fn the_week_cursor_wraps_around_both_ends() {
     let mut h = harness("keys-week-wrap", script_with_issues(Vec::new()));
+    go_worklog(&mut h.app);
     h.app.dispatch(Action::Week(week::Action::Select(0)));
     press(&mut h.app, KeyCode::Char('k'));
     assert_eq!(week_model(&h.app).selected, 6, "Mon ↑ wraps to Sun");

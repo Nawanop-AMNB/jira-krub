@@ -1,10 +1,10 @@
 use super::action::{Action, PushScope};
 use super::deps::Deps;
-use super::features::{connect, day, entry_form, push, settings, week};
+use super::features::{connect, day, entry_form, push, settings, tasks, week};
 use super::hit::HitRegistry;
 use super::msg::{Msg, SyncError};
 use crate::application::ports::{GatewayErrorKind, Window};
-use crate::application::use_cases::sync::{self, SyncInput};
+use crate::application::use_cases::sync::{self, SyncInput, SyncProgress};
 use crate::application::{Config, JiraGateway};
 use crate::domain::{Issue, IssueKey, Ledger, RemoteWorklog, StartTime, Week, WorkCalendar};
 use crate::infrastructure::Worker;
@@ -51,7 +51,16 @@ pub enum Screen {
     Connect(connect::Model),
     Settings(settings::Model),
     Week(week::Model),
+    Tasks(tasks::Model),
     Day(day::Model),
+}
+
+/// The two tabs of the main screen (R17). Remembered across Settings and
+/// Connect so those screens return to the tab they were opened from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MainTab {
+    Worklog,
+    Tasks,
 }
 
 pub enum Overlay {
@@ -88,6 +97,7 @@ pub struct App {
     pub ledger: Ledger,
     pub remote: RemoteCache,
     pub screen: Screen,
+    pub main_tab: MainTab,
     pub overlay: Option<Overlay>,
     pub status: Option<Status>,
     pub worker: Worker<Msg>,
@@ -111,7 +121,7 @@ impl App {
         let config = deps.config_store.load().unwrap_or(None);
         let gateway = config.as_ref().and_then(|c| (deps.gateway_factory)(&c.credentials).ok());
         let screen = if gateway.is_some() {
-            Screen::Week(week::Model::new(today))
+            Screen::Tasks(tasks::Model::new())
         } else {
             Screen::Connect(connect::Model::new(config.as_ref().map(|c| &c.credentials), None))
         };
@@ -122,6 +132,7 @@ impl App {
             ledger,
             remote: RemoteCache::default(),
             screen,
+            main_tab: MainTab::Tasks,
             overlay: None,
             status: None,
             worker: Worker::default(),
@@ -210,10 +221,23 @@ impl App {
     }
     pub fn go_week(&mut self, week: Week, selected: NaiveDate) {
         self.overlay = None;
+        self.main_tab = MainTab::Worklog;
         let mut m = week::Model::new(self.today);
         m.week = week;
         m.select_date(selected);
         self.screen = Screen::Week(m);
+    }
+    pub fn go_tasks(&mut self) {
+        self.overlay = None;
+        self.main_tab = MainTab::Tasks;
+        self.screen = Screen::Tasks(tasks::Model::new());
+    }
+    /// Open one of the two main-screen tabs, rebuilding its model.
+    pub fn set_main_tab(&mut self, tab: MainTab) {
+        match tab {
+            MainTab::Tasks => self.go_tasks(),
+            MainTab::Worklog => self.go_week(Week::containing(self.today), self.today),
+        }
     }
     pub fn go_day(&mut self, date: NaiveDate) {
         self.overlay = None;
@@ -233,11 +257,7 @@ impl App {
     pub fn local_issues(&self) -> Vec<Issue> {
         let mut out: Vec<Issue> = Vec::new();
         for key in self.ledger.watchlist() {
-            out.push(self.remote.issue(key).cloned().unwrap_or_else(|| Issue {
-                key: key.clone(),
-                summary: String::new(),
-                status: String::new(),
-            }));
+            out.push(self.remote.issue(key).cloned().unwrap_or_else(|| Issue::new(key.clone(), "", "")));
         }
         for i in self.remote.mine.iter().chain(self.remote.history.iter()) {
             if !out.iter().any(|o| o.key == i.key) {
@@ -254,7 +274,7 @@ impl App {
         match &self.screen {
             Screen::Week(m) => m.week,
             Screen::Day(m) => Week::containing(m.date),
-            Screen::Connect(_) | Screen::Settings(_) => Week::containing(self.today),
+            Screen::Connect(_) | Screen::Settings(_) | Screen::Tasks(_) => Week::containing(self.today),
         }
     }
 
@@ -293,11 +313,16 @@ impl App {
         self.remote.syncing = true;
         self.set_busy("syncing…");
         let input = SyncInput { jql, watchlist: self.ledger.watchlist().to_vec(), window: self.fetch_window() };
-        self.worker.spawn(move || {
-            Msg::Synced(sync::run(gateway.as_ref(), &input).map_err(|e| SyncError {
+        self.worker.spawn_streaming(move |tx| {
+            let mut progress = |p: SyncProgress| {
+                let SyncProgress::Mine { account_id, display_name, mine } = p;
+                let _ = tx.send(Msg::SyncMine { account_id, display_name, mine });
+            };
+            let result = sync::run_with(gateway.as_ref(), &input, &mut progress);
+            let _ = tx.send(Msg::Synced(result.map_err(|e| SyncError {
                 kind: crate::application::ports::classify(&e),
                 message: e.to_string(),
-            }))
+            })));
         });
     }
 
@@ -306,6 +331,11 @@ impl App {
     pub fn on_msg(&mut self, msg: Msg) {
         match msg {
             Msg::ConnectionTested { creds, outcome } => connect::on_tested(self, creds, outcome),
+            Msg::SyncMine { account_id, display_name, mine } => {
+                self.remote.account_id = Some(account_id);
+                self.remote.display_name = display_name;
+                self.remote.mine = mine;
+            }
             Msg::Synced(Ok(out)) => {
                 self.remote.syncing = false;
                 self.remote.offline = false;
@@ -375,6 +405,7 @@ impl App {
                 Screen::Connect(m) => connect::keys(m, &key),
                 Screen::Settings(m) => settings::keys(m, &key),
                 Screen::Week(m) => week::keys(m, &key),
+                Screen::Tasks(m) => tasks::keys(m, &key),
                 Screen::Day(m) => day::keys(m, &key),
             },
         };
@@ -391,7 +422,7 @@ impl App {
                 Screen::Connect(_) => Some(Action::Connect(connect::Action::Paste(text))),
                 Screen::Settings(_) => Some(Action::Settings(settings::Action::Paste(text))),
                 Screen::Day(_) => Some(Action::Day(day::Action::Paste(text))),
-                Screen::Week(_) => None,
+                Screen::Week(_) | Screen::Tasks(_) => None,
             },
         };
         if let Some(a) = action {
@@ -455,6 +486,14 @@ impl App {
             }
             Action::Refresh => self.start_sync(),
             Action::OpenSettings => self.go_settings(),
+            Action::SwitchMainTab => {
+                let next = match self.main_tab {
+                    MainTab::Worklog => MainTab::Tasks,
+                    MainTab::Tasks => MainTab::Worklog,
+                };
+                self.set_main_tab(next);
+            }
+            Action::SetMainTab(t) => self.set_main_tab(t),
             Action::ConfirmYes => {
                 if let Some(Overlay::Confirm(c)) = self.overlay.take() {
                     self.dispatch(c.yes);
@@ -470,6 +509,7 @@ impl App {
             Action::Connect(a) => connect::update(self, a),
             Action::Settings(a) => settings::update(self, a),
             Action::Week(a) => week::update(self, a),
+            Action::Tasks(a) => tasks::update(self, a),
             Action::Day(a) => day::update(self, a),
             Action::Form(a) => entry_form::update(self, a),
         }

@@ -65,6 +65,12 @@ pub trait JiraGateway: Send + Sync {
 /// Builds a gateway from credentials (needed before any config is saved).
 pub type JiraGatewayFactory = Arc<dyn Fn(&Credentials) -> Result<Arc<dyn JiraGateway>> + Send + Sync>;
 
+/// Opens a URL in the user's default browser. A port so the TUI stays
+/// testable; the real implementation lives in `infrastructure`.
+pub trait UrlOpener: Send + Sync {
+    fn open(&self, url: &str) -> Result<()>;
+}
+
 pub trait StateStore: Send + Sync {
     fn load(&self) -> Result<Ledger>;
     fn save(&self, ledger: &Ledger) -> Result<()>;

@@ -1,7 +1,7 @@
 use super::model::{Action, Focus as F, Model, TestState};
 use crate::application::use_cases::test_connection::{self, Outcome};
 use crate::application::{Config, Credentials};
-use crate::domain::{SiteUrl, Week};
+use crate::domain::SiteUrl;
 use crate::tui::action::Action as Global;
 use crate::tui::app::{App, Screen};
 use crate::tui::msg::Msg;
@@ -149,11 +149,10 @@ fn save(app: &mut App) {
     }
     app.config = Some(config);
     let from_settings = model(app).is_some_and(|m| m.from_settings);
-    let today = app.today;
     if from_settings {
         app.go_settings();
     } else {
-        app.go_week(Week::containing(today), today);
+        app.set_main_tab(app.main_tab);
     }
     app.set_status(format!("saved to {}", app.deps.config_store.location()));
     app.start_sync();
@@ -199,8 +198,7 @@ pub fn update(app: &mut App, action: Action) {
             if from_settings {
                 app.go_settings();
             } else if app.gateway.is_some() {
-                let today = app.today;
-                app.go_week(Week::containing(today), today);
+                app.set_main_tab(app.main_tab);
             } else {
                 app.quit = true;
             }

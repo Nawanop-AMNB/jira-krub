@@ -39,10 +39,8 @@ pub fn ticket_rows(app: &App, m: &Model) -> Vec<TicketRow> {
     let mut seen: HashSet<IssueKey> = HashSet::new();
 
     for key in app.ledger.watchlist() {
-        let issue = app.remote.issue(key).cloned().unwrap_or_else(|| Issue {
-            key: key.clone(),
-            summary: if app.remote.offline { "(offline)".into() } else { "…".into() },
-            status: String::new(),
+        let issue = app.remote.issue(key).cloned().unwrap_or_else(|| {
+            Issue::new(key.clone(), if app.remote.offline { "(offline)" } else { "…" }, "")
         });
         if issue.matches(&q) {
             seen.insert(issue.key.clone());

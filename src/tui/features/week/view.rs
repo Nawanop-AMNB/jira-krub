@@ -33,7 +33,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         .map(|d| DaySummary::compute(*d, app.today, &calendar, app.ledger.entries(), &app.remote.worklogs))
         .collect();
 
-    draw_header(frame, app, m, header, hits);
+    draw_header(frame, m, header, hits);
     draw_week(frame, app, m, &summaries, &calendar, week_box, hits);
     if below.height >= 3 {
         draw_day_preview(frame, app, m, below);
@@ -46,12 +46,13 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
         Hint::new("←→", "week", Global::Nop),
         Hint::new("t", "today", Global::Week(Action::Today)),
         Hint::new("r", "sync", Global::Refresh),
+        Hint::new("Tab", "tasks", Global::SwitchMainTab),
         Hint::new(",", "settings", Global::OpenSettings),
         Hint::new("q", "quit", Global::Quit),
     ]
 }
 
-fn draw_header(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut HitRegistry) {
+fn draw_header(frame: &mut Frame, m: &Model, area: Rect, hits: &mut HitRegistry) {
     let prev = m.week.prev().monday().format("%d %b").to_string();
     let next = m.week.next().monday().format("%d %b").to_string();
     let label = format!("[ {} → {} ]", m.week.monday().format("%d %b"), m.week.sunday().format("%d %b %Y"));
@@ -73,17 +74,8 @@ fn draw_header(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut H
     push(&mut spans, label, theme::bold(), Some(Global::Week(Action::Today)));
     push(&mut spans, "  ".into(), Style::new(), None);
     push(&mut spans, format!("{next} ▶"), theme::accent(), Some(Global::Week(Action::NextWeek)));
-    let staged_n = app.ledger.staged_count();
-    if staged_n > 0 {
-        push(&mut spans, format!("   ⚠ {staged_n} staged not pushed — p"), theme::warn(), Some(Global::PushRequest(PushScope::Week(m.week))));
-    }
-    if app.remote.syncing {
-        push(&mut spans, "   ⟳ syncing".into(), theme::dim(), None);
-    } else if app.remote.offline {
-        push(&mut spans, "   offline".into(), theme::bad(), None);
-    } else if !app.remote.display_name.is_empty() {
-        push(&mut spans, format!("   {}", app.remote.display_name), theme::dim(), None);
-    }
+    // No global "staged not pushed" warning: `+Xh staged` per day row says it
+    // where it matters (R1, 0.3.0). The signed-in name lives on the tab row.
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
@@ -141,7 +133,7 @@ fn draw_week(frame: &mut Frame, app: &App, m: &Model, summaries: &[DaySummary], 
             Span::styled(format!("{bar:<bar_w$}"), status_style),
             Span::raw("  "),
             Span::styled(format!("{hours_txt:<8}"), hi(theme::bold())),
-            Span::styled(format!("{status_txt:<12}"), hi(status_style)),
+            Span::styled(pad_to_width(&status_txt, 12), hi(status_style)),
             Span::styled(staged_txt, hi(theme::warn())),
         ]);
         frame.render_widget(Paragraph::new(line), row);

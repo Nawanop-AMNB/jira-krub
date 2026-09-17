@@ -1,4 +1,4 @@
-use super::features::{connect, day, entry_form, settings, week};
+use super::features::{connect, day, entry_form, settings, tasks, week};
 use crate::domain::Week;
 use chrono::NaiveDate;
 
@@ -10,9 +10,14 @@ pub enum Action {
     ForceQuit,
     Refresh,
     OpenSettings,
+    /// `Tab` on the main screen: toggle Worklog ↔ My tasks.
+    SwitchMainTab,
+    /// Clicking a main-screen tab label.
+    SetMainTab(crate::tui::app::MainTab),
     Connect(connect::Action),
     Settings(settings::Action),
     Week(week::Action),
+    Tasks(tasks::Action),
     Day(day::Action),
     Form(entry_form::Action),
     ConfirmYes,

@@ -91,3 +91,5 @@ mod push_flow_tests;
 mod day_view_tests;
 #[cfg(test)]
 mod entry_form_tests;
+#[cfg(test)]
+mod tasks_tests;

@@ -1,6 +1,6 @@
 # jira-krub — Product Spec
 
-**Status:** draft v0.9 · 2026-09-15
+**Status:** draft v1.0 · 2026-09-17
 **Owner:** ka.nawanop (sole user)
 **Target:** Jira Cloud (`*.atlassian.net`), native worklog dialog (no Tempo)
 
@@ -144,9 +144,12 @@ Ordered by priority.
   hours only** — green means Jira has it, so staged-but-forgotten work can
   never look done. Status: `✓` green pushed ≥ target · `need Xh` yellow ·
   `empty` red on past workday · `future` dim · weekend blank.
-- Header shows `⚠ N staged not pushed — p` whenever anything is pending.
+- No global "staged not pushed" warning: pending work is visible per day
+  row (`+Xh staged`) and in the day view; that is enough (decided
+  2026-09-17, removed in 0.3.0).
 - Header: `◀ prev-week  [ 14 Sep → 20 Sep ]  next-week ▶`, week total vs
-  weekly target, total staged count.
+  weekly target.
+- The week summary is the **Worklogs** tab of the main screen (R17).
 - Keys: `←/→` or `[`/`]` shift week · `t` current week · `j/k` select day ·
   `Enter` open day view · `a` stage entry on selected day · `p` push week.
 - AC: with Mon–Tue at 8h pushed and Wed at 6h15 (2h staged), rows read
@@ -458,6 +461,104 @@ AC:
 Esc table addition: Settings → main (unsaved changes discarded, no prompt
 unless a field was edited — then `discard changes? [y/n]`).
 
+
+**R17. Main screen tabs — My Tasks | Worklogs** (0.3.0)
+
+*Tab bar component*
+- One reusable widget, extracted from Settings (R16) and used by both
+  Settings and the main screen: labels in a row, active label bold, others
+  dim, each label clickable, hint `Tab switches` right-aligned. `Tab`
+  cycles to the next tab and wraps. Tab never does anything else (R9a).
+- On the main screen the tab bar is the **top row** of the terminal, above
+  everything. The signed-in name stays right-aligned on that row. Tab body
+  starts on row 1.
+- Startup tab is **My Tasks**. `Esc` does nothing on either tab: both are
+  tab contents, there is no "previous" to go back to (R9b: Esc never quits
+  from main).
+
+*Worklog tab*
+- Today's main screen (R1) unchanged apart from moving down one row.
+  Footer hint gains `Tab tasks`.
+
+*My tasks tab*
+- Lists the synced "work for me" issues (R2 default JQL, same request, no
+  extra fetch), **grouped by Jira status name**. Groups ordered by status
+  category: `indeterminate` (In Progress, In Review, …) first, then `new`
+  (To Do, Backlog, …); inside a category alphabetical by status name.
+  `done` never appears (already excluded by the JQL). Watchlist issues are
+  **not** listed here.
+- Group header row: `─ <status> · <count> ───`. Not selectable: `↑`/`↓`
+  skip it. Groups are not foldable in this version.
+- Issue row: `KEY  summary  [due …]  updated <rel>`; summary truncated by
+  display width; `due` column blank when the issue has no due date.
+  - `due today` and `overdue Nd` in warn colour; `due Fri 19 Sep` when the
+    date is inside the current week; `due 30 Sep` otherwise (year added
+    when not this year).
+  - `updated today` / `updated 3d ago`, day granularity (relative to the
+    app's `today`, deterministic), dim, right-aligned.
+- Sort inside a group: `updated` descending (Jira's order from the JQL).
+- Box title: `my tasks · N`; `· offline` appended when the last sync
+  failed on network; `syncing…` while a sync runs.
+- Filter box on the first row, same rule as every search box (R9a): type to
+  filter without Enter, matches key or summary case-insensitively, empty
+  groups disappear, `Ctrl+U` clears, `↑` from the first issue walks into
+  it, cursor is not shown on a row while the box is focused.
+- Keys: `↑`/`↓` `j`/`k` move · `Enter` **open the issue in the browser**
+  (`<site>/browse/KEY` via `open` on macOS, `xdg-open` on Linux; status
+  line `opened KEY` or `could not open browser: …`) · `r` sync · `Tab`
+  Worklog · `,` settings · `q` quit. `Space`, `w`, `a`, `p` do nothing here:
+  this tab is for finding work, not logging it.
+- Mouse: click a row selects it, double-click opens it, click a tab label
+  switches, wheel scrolls.
+- Empty: `nothing assigned to you · r sync`. First launch before sync
+  completes: `syncing…`.
+- Settings / Connect return to the tab they were opened from.
+- Browser opening goes through an application port (`UrlOpener`) so the TUI
+  is testable; the infrastructure adapter spawns `open` / `xdg-open`
+  without waiting for it.
+- Data: `Issue` gains `status_category: StatusCategory {New, Indeterminate,
+  Done}`, `due: Option<NaiveDate>`, `updated: NaiveDate` (date part of
+  Jira's `updated`). The
+  search request adds `statusCategory` (via `status`), `duedate`, `updated`
+  to `fields`; the fake Jira and gateway tests cover them.
+
+AC:
+- Given 3 issues In Progress, 1 In Review, 4 To Do, when My tasks is shown,
+  then groups appear in that order with counts `3`, `1`, `4` and the cursor
+  is on the first In Progress row.
+- Given an issue due yesterday, then its due column reads `overdue 1d` in
+  warn colour; due today → `due today` warn; due next Monday → `due Mon 22
+  Sep`; no due date → blank and the `updated` column is still aligned.
+- Given the filter reads `auth`, then only rows whose key or summary
+  contains `auth` remain and groups without matches are hidden; `Ctrl+U`
+  restores all.
+- Given the cursor on `KAN-12` and Enter, then the OS browser opener is
+  invoked with `https://<site>/browse/KAN-12` and the status line reads
+  `opened KAN-12`.
+- Given `Tab` pressed on Worklog, then My tasks is shown; `Tab` again
+  returns to Worklog; `Esc` on either tab changes nothing.
+- Given the app restarted, then My tasks is the active tab.
+- Given a Thai summary, then the `due`/`updated` columns stay aligned
+  (display-width truncation, R9c).
+
+**R7b. Staged, concurrent sync** (0.3.0, done)
+- The assigned-to-me list is reported to the UI right after its search,
+  before any watchlist or history request; My Tasks renders from it while
+  the rest of the sync continues (title `· syncing…`). Ledger reconcile and
+  the state save still wait for the complete result.
+- Watchlist per-issue fetches, the history search and per-issue worklog
+  refetches run concurrently, at most 4 requests in flight. Request count
+  and ordering of results are unchanged.
+- Measured on the owner's site: assigned list visible +0.9 s after the first
+  frame (was +3.1 s), full sync +1.6 s (was +3.1 s).
+
+**R9c. Display-width correctness** (0.2.2, done)
+- Every cursor position, horizontal scroll, truncation and padding is
+  measured in terminal columns (Unicode width), never in chars: Thai
+  combining marks are 0 columns, CJK 2. `←`/`→` move by grapheme cluster;
+  `⌫` deletes one code point (macOS behaviour). Mouse clicks map a column to
+  the grapheme start under it.
+
 ### P1 — Should have (fast follow)
 
 **R11. Git hints for backfill**
@@ -513,9 +614,11 @@ Three screens. All mockups at 80 columns.
  ↑↓ field · Enter test/save · Esc quit
 ```
 
-**Main — week summary**
+**Main — Worklog tab (week summary)**
 ```
- jira-krub   ◀ 07 Sep   [ 14 Sep → 20 Sep ]   21 Sep ▶     32h / 40h   3 staged
+  My Tasks   Worklogs                                         Tab switches
+
+ jira-krub   ◀ 07 Sep   [ 14 Sep → 20 Sep ]   21 Sep ▶     32h / 40h
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │   Mon 14   ████████████████████████  8h        ✓                              │
 │   Tue 15   ████████████████████████  8h        ✓                              │
@@ -525,7 +628,28 @@ Three screens. All mockups at 80 columns.
 │   Sat 19                                                                      │
 │   Sun 20                                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
- [a add] [Enter open day] [p push week] [← →] week  [t today]  [q quit]
+ [a add] [Enter open day] [p push week] [← →] week  [t today] [Tab tasks] [q quit]
+```
+
+**Main — My tasks tab**
+```
+  My Tasks   Worklogs                                         Tab switches
+
+┌ my tasks · 8 · synced 2m ago ────────────────────────────────────────────────┐
+│ 🔍  type to filter                                                           │
+│ ─ In Progress · 3 ───────────────────────────────────────────────────────── │
+│▶  KAN-12    Fix auth token expiry               due Fri 19 Sep  updated today│
+│   KAN-9     Refactor worklog sync               due today       updated 1d ago│
+│   STW-140   Support: SSO outage                                 updated 3d   │
+│ ─ In Review · 1 ─────────────────────────────────────────────────────────── │
+│   KAN-11    Add retry to client                 overdue 2d      updated 5h   │
+│ ─ To Do · 4 ─────────────────────────────────────────────────────────────── │
+│   KAN-14    Migrate config                      due 30 Sep      updated 2d   │
+│   KAN-15    Fix pagination                                      updated 6d   │
+│   KAN-16    Write docs                                          updated 8d   │
+│   KAN-17    Cleanup                                             updated 12d  │
+└──────────────────────────────────────────────────────────────────────────────┘
+ Enter open in Jira · ↑↓ move · / filter · r sync · Tab worklogs · , settings · q quit
 ```
 
 **Day view — tickets | prepare logwork**
@@ -584,6 +708,9 @@ Resolved from Q&A on 2026-09-15.
 | Remaining estimate | Unused; always `adjustEstimate=leave`, field never shown |
 | Holidays / workdays | Per-year holiday list and global workdays in Settings (R16); shown as `off`, excluded from targets |
 | Storage | Single JSON state file; SQLite not needed at this scale |
+| Main tabs (0.3.0) | Top row tab bar `My Tasks | Worklogs`, one reusable component shared with Settings; `Tab` cycles; My tasks on every launch; Esc inert on both |
+| My tasks | Same JQL result as R2, grouped by status name, category order in-progress → to-do; Enter opens the issue in the browser; no logging actions, no watchlist rows, no Done |
+| Global staged warning | Removed; per-day `+Xh staged` and the day view are enough |
 | First run | In-app setup screen (site URL any https host, email, masked token, test before save) instead of example-config-and-exit |
 
 ## 8. Open Questions
@@ -602,11 +729,13 @@ Resolved from Q&A on 2026-09-15.
 | 2 (done) | R6 batch push + R7 sync merge + R8 config + R10 + R4 Jira search | Real week logged end-to-end, zero web UI |
 | 3 (done) | R9 mouse | Everything reachable by click |
 | 4 | R11 git hints + R12 repeat/templates + R14 fill | Forgotten day backfilled in < 2 min |
-| 5 | R13 remote worklog edit/delete, R15, then P2 as needed | — |
+| 5 (done) | R13 remote worklog edit/delete | — |
+| 6 | R17 main tabs + My tasks (0.3.0) | Undone work visible by status; one keypress to the issue in Jira |
+| 7 | R15, then P2 as needed | — |
 
 No hard deadline. Phase 2 is the first version worth using daily.
 
-## 10. Implementation status (2026-09-16)
+## 10. Implementation status (2026-09-17)
 
 | Req | Status | Notes |
 |-----|--------|-------|
@@ -626,8 +755,11 @@ No hard deadline. Phase 2 is the first version worth using daily.
 | R9b Esc | done | |
 | R10 safety | done | panic hook restores terminal, mouse capture and bracketed paste |
 | R13 remote edit/delete | done | adopt Jira-only rows on first edit; `~`/`✗` markers; PUT/DELETE in the same batch |
+| R9c display width | done | 0.2.2: Thai/CJK cursor, scroll, truncation, padding by column; `←→` by grapheme |
+| R17 main tabs + My tasks | done | 0.3.0: tab bar widget shared with Settings, starts on My Tasks, Enter opens the browser through a `UrlOpener` port |
+| R7b staged concurrent sync | done | 0.3.0 |
 | R11, R12, R14, R15 | not started | P1 |
 
 Verified end to end against a local fake Jira (setup → sync → search → watch →
 stage → inline edit → push with one failure → restart with state intact).
-Not yet run against a real Atlassian site.
+Verified against the owner's real Atlassian site since 0.1.0.

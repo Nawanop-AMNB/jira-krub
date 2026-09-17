@@ -209,7 +209,7 @@ fn a_401_during_sync_reopens_the_connect_screen() {
 fn a_network_failure_during_sync_stays_on_the_main_screen_in_offline_mode() {
     let mut h = harness("sync-offline", script_with_issues(Vec::new()));
     h.app.on_msg(Msg::Synced(Err(SyncError { kind: GatewayErrorKind::Network, message: "connection refused".into() })));
-    assert!(matches!(h.app.screen, Screen::Week(_)), "a dropped connection is not an auth problem");
+    assert!(matches!(h.app.screen, Screen::Tasks(_)), "a dropped connection is not an auth problem");
     assert!(h.app.remote.offline, "the UI says offline and keeps the last state");
 }
 

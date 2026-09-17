@@ -1,8 +1,8 @@
 use crate::application::ports::{GatewayError, GatewayErrorKind, IssueWithWorklogs, JiraGateway, Me, NewWorklog, Window};
 use crate::application::Credentials;
-use crate::domain::{Issue, IssueKey, RemoteWorklog};
+use crate::domain::{Issue, IssueKey, RemoteWorklog, StatusCategory};
 use anyhow::{Context, Result, anyhow};
-use chrono::{DateTime, Days, Local, TimeZone};
+use chrono::{DateTime, Days, Local, NaiveDate, TimeZone};
 use reqwest::blocking::{Client, RequestBuilder};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -113,12 +113,28 @@ fn extract_error_message(body: &str) -> Option<String> {
     None
 }
 
+/// Fields every issue lookup needs; the tasks tab sorts on `duedate`/`updated`
+/// and colours by `status.statusCategory` (which Jira nests inside `status`).
+const ISSUE_FIELDS: &str = "summary,status,duedate,updated";
+
 fn parse_issue(v: &Value) -> Option<Issue> {
-    Some(Issue {
-        key: IssueKey::parse(v["key"].as_str()?).ok()?,
-        summary: v["fields"]["summary"].as_str().unwrap_or("").to_string(),
-        status: v["fields"]["status"]["name"].as_str().unwrap_or("").to_string(),
-    })
+    let fields = &v["fields"];
+    let mut issue = Issue::new(
+        IssueKey::parse(v["key"].as_str()?).ok()?,
+        fields["summary"].as_str().unwrap_or(""),
+        fields["status"]["name"].as_str().unwrap_or(""),
+    );
+    issue.status_category = match fields["status"]["statusCategory"]["key"].as_str() {
+        Some("indeterminate") => StatusCategory::Indeterminate,
+        Some("done") => StatusCategory::Done,
+        // "new", anything unrecognised, and a missing category all mean "not started".
+        _ => StatusCategory::New,
+    };
+    issue.due = fields["duedate"].as_str().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+    if let Some(updated) = fields["updated"].as_str().and_then(|s| DateTime::parse_from_str(s, STARTED_FMT).ok()) {
+        issue.updated = updated.date_naive();
+    }
+    Some(issue)
 }
 
 fn parse_worklog(key: &IssueKey, w: &Value) -> Option<RemoteWorklog> {
@@ -176,11 +192,11 @@ impl JiraGateway for HttpJiraGateway {
     }
 
     fn search_issues(&self, jql: &str, max: usize) -> Result<Vec<Issue>> {
-        Ok(self.search_raw(jql, max, "summary,status")?.iter().filter_map(parse_issue).collect())
+        Ok(self.search_raw(jql, max, ISSUE_FIELDS)?.iter().filter_map(parse_issue).collect())
     }
 
     fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
-        let raw = self.search_raw(jql, max, "summary,status,worklog")?;
+        let raw = self.search_raw(jql, max, &format!("{ISSUE_FIELDS},worklog"))?;
         Ok(raw
             .iter()
             .filter_map(|v| {
@@ -345,6 +361,35 @@ mod tests {
         assert_eq!(parsed.started.offset().local_minus_utc(), 7 * 3600);
         assert_eq!(parsed.started.to_rfc3339(), "2026-09-16T09:00:00+07:00");
         assert!(parse_worklog(&key("A-1"), &json!({ "id": "1" })).is_none());
+    }
+
+    #[test]
+    fn parse_issue_reads_category_due_and_updated() {
+        let v = json!({
+            "key": "KAN-1",
+            "fields": {
+                "summary": "Fix auth",
+                "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } },
+                "duedate": "2026-09-19",
+                "updated": "2026-09-15T10:00:00.000+0700"
+            }
+        });
+        let i = parse_issue(&v).expect("parses");
+        assert_eq!(i.status_category, StatusCategory::Indeterminate);
+        assert_eq!(i.due, NaiveDate::from_ymd_opt(2026, 9, 19));
+        assert_eq!(i.updated, NaiveDate::from_ymd_opt(2026, 9, 15).unwrap(), "the date in the issue's own offset");
+    }
+
+    #[test]
+    fn parse_issue_defaults_when_fields_missing() {
+        let v = json!({
+            "key": "KAN-2",
+            "fields": { "summary": "S", "status": { "name": "To Do" }, "duedate": null }
+        });
+        let i = parse_issue(&v).expect("parses");
+        assert_eq!(i.status_category, StatusCategory::New);
+        assert_eq!(i.due, None);
+        assert_eq!(i.updated, NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(), "a fixed epoch, never today");
     }
 
     #[test]

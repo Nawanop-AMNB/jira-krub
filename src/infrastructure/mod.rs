@@ -4,11 +4,13 @@ pub mod jira_http;
 pub mod json_state;
 pub mod paths;
 pub mod toml_config;
+pub mod url_opener;
 pub mod worker;
 
 pub use jira_http::HttpJiraGateway;
 pub use json_state::JsonStateStore;
 pub use toml_config::TomlConfigStore;
+pub use url_opener::SystemUrlOpener;
 pub use worker::Worker;
 #[cfg(test)]
 mod toml_config_tests;

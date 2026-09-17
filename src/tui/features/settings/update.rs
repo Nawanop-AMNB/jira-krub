@@ -1,7 +1,7 @@
 use super::model::{Action, GlobalField, HolidayEdit, HolidayRow, Model, Tab, YearField, normalise_date};
 use crate::application::Config;
 use crate::application::config::{GlobalSettings, YearSettings};
-use crate::domain::{StartTime, Week, duration};
+use crate::domain::{StartTime, duration};
 use crate::tui::action::Action as Global;
 use crate::tui::app::{App, Screen};
 use crate::tui::widgets::TextInput;
@@ -205,8 +205,7 @@ fn save(app: &mut App) {
     }
     let resync = cfg.global.lookback_weeks != initial_lookback;
     app.config = Some(cfg);
-    let today = app.today;
-    app.go_week(Week::containing(today), today);
+    app.set_main_tab(app.main_tab);
     app.set_status("settings saved");
     if resync {
         app.remote.window = None;
@@ -219,8 +218,7 @@ fn cancel(app: &mut App) {
     if dirty {
         app.confirm("discard unsaved settings? [y/n]", Global::Settings(Action::Discard));
     } else {
-        let today = app.today;
-        app.go_week(Week::containing(today), today);
+        app.set_main_tab(app.main_tab);
     }
 }
 
@@ -282,10 +280,7 @@ pub fn update(app: &mut App, action: Action) {
     match action {
         Save => save(app),
         Cancel => cancel(app),
-        Discard => {
-            let today = app.today;
-            app.go_week(Week::containing(today), today);
-        }
+        Discard => app.set_main_tab(app.main_tab),
         Commit => {
             if let Some(m) = model(app) {
                 commit_field(m);
