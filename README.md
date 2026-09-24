@@ -203,3 +203,7 @@ fake Jira can be used for manual runs.
 
 Releases: push a `v*` tag and `.github/workflows/release.yml` builds the four
 binaries and attaches them to the GitHub release the installer reads.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
