@@ -31,7 +31,9 @@ pub struct SyncOutput {
     pub watched: Vec<Issue>,
     /// Issues with my worklogs in the window that are neither mine nor watched.
     pub history: Vec<Issue>,
-    /// My worklogs inside `window` across all three lists.
+    /// My worklogs inside `window` across all three lists, each counted
+    /// once — an issue that is both mine and watched contributes its
+    /// worklogs only through `mine`.
     pub worklogs: Vec<RemoteWorklog>,
     pub window: Window,
 }
@@ -83,6 +85,10 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
 
     let sem = Semaphore::new(MAX_IN_FLIGHT);
 
+    // Known up front, so a watchlist key that's also mine doesn't fetch (and
+    // double-count) worklogs already coming from the mine list.
+    let mine_keys: BTreeSet<IssueKey> = mine_raw.iter().map(|i| i.issue.key.clone()).collect();
+
     // Watchlist keys and the history search are independent of each other
     // and of the mine list already in hand, so they run concurrently.
     let account_id = me.account_id.as_str();
@@ -92,9 +98,10 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
             .iter()
             .map(|key| {
                 let sem = &sem;
+                let mine_keys = &mine_keys;
                 scope.spawn(move || {
                     sem.acquire();
-                    let result = fetch_watchlist_issue(gateway, key, account_id, w);
+                    let result = fetch_watchlist_issue(gateway, key, account_id, w, mine_keys);
                     sem.release();
                     result
                 })
@@ -124,7 +131,7 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
         }
     }
 
-    let known: BTreeSet<IssueKey> = mine_raw.iter().map(|i| i.issue.key.clone()).chain(watched.iter().map(|i| i.key.clone())).collect();
+    let known: BTreeSet<IssueKey> = mine_keys.iter().cloned().chain(watched.iter().map(|i| i.key.clone())).collect();
     let history_raw: Vec<IssueWithWorklogs> = history_result?.into_iter().filter(|i| !known.contains(&i.issue.key)).collect();
 
     // Per-issue embedded-or-refetch for mine and history, also concurrent.
@@ -173,11 +180,13 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
 
 /// One watchlist key: fetch the issue, then (only if it exists) its
 /// worklogs. A missing issue is skipped, not an error; a worklog fetch
-/// failure is.
-fn fetch_watchlist_issue(gateway: &dyn JiraGateway, key: &IssueKey, account_id: &str, w: &Window) -> WatchlistFetch {
+/// failure is. A key that's also in the mine list skips the worklog fetch
+/// entirely — those worklogs already come from `mine`, and fetching them
+/// again would double-count them in `SyncOutput.worklogs`.
+fn fetch_watchlist_issue(gateway: &dyn JiraGateway, key: &IssueKey, account_id: &str, w: &Window, mine_keys: &BTreeSet<IssueKey>) -> WatchlistFetch {
     match gateway.get_issue(key) {
         Ok(issue) => {
-            let worklogs = gateway.my_worklogs(key, account_id, Some(w))?;
+            let worklogs = if mine_keys.contains(key) { Vec::new() } else { gateway.my_worklogs(key, account_id, Some(w))? };
             Ok(Some((issue, worklogs)))
         }
         Err(_) => Ok(None),
