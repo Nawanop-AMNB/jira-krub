@@ -207,6 +207,44 @@ fn never_more_than_four_requests_in_flight() {
     assert!(gw.peak_in_flight() <= 4, "peak in flight was {}", gw.peak_in_flight());
 }
 
+// ---- dedup: mine ∩ watched must not double-count worklogs -----------------
+
+#[test]
+fn an_issue_both_mine_and_watched_reports_each_worklog_once() {
+    let gw = FakeGateway::new(Script {
+        searches: [Ok(vec![issue("A-1")]), Ok(vec![])].into(),
+        issues: [("A-1".to_string(), issue("A-1"))].into(),
+        embedded: [("A-1".to_string(), (vec![remote("w1", "A-1", (2026, 9, 16), 3600)], 1))].into(),
+        worklogs: [("A-1".to_string(), vec![remote("w1", "A-1", (2026, 9, 16), 3600)])].into(),
+        ..Default::default()
+    });
+    let out = run(&gw, &input(&["A-1"])).unwrap();
+    let ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
+    assert_eq!(ids, vec!["w1"], "the worklog must be counted once even though A-1 is both mine and watched");
+    assert_eq!(keys(&out.mine), vec!["A-1"]);
+    assert_eq!(keys(&out.watched), vec!["A-1"], "watched list is unchanged — the issue is still fetched");
+}
+
+#[test]
+fn a_watched_issue_that_is_not_mine_still_gets_its_worklogs() {
+    let gw = FakeGateway::new(Script {
+        searches: [Ok(vec![issue("A-1")]), Ok(vec![])].into(),
+        issues: [("OPS-7".to_string(), issue("OPS-7"))].into(),
+        embedded: [("A-1".to_string(), (vec![remote("w1", "A-1", (2026, 9, 16), 3600)], 1))].into(),
+        worklogs: [("OPS-7".to_string(), vec![remote("w9", "OPS-7", (2026, 9, 15), 900)])].into(),
+        ..Default::default()
+    });
+    let out = run(&gw, &input(&["OPS-7"])).unwrap();
+    let mut ids: Vec<&str> = out.worklogs.iter().map(|w| w.id.as_str()).collect();
+    ids.sort();
+    assert_eq!(ids, vec!["w1", "w9"]);
+    assert!(
+        gw.calls().my_worklogs.iter().any(|(k, _, w)| k.as_str() == "OPS-7" && *w == Some(window())),
+        "a genuinely-watched-only issue must still get its own worklogs fetched: {:?}",
+        gw.calls().my_worklogs
+    );
+}
+
 #[test]
 fn missing_watchlist_issue_is_still_skipped_and_worklog_error_still_fails() {
     // A missing watchlist issue is skipped without failing the whole sync,
