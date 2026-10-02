@@ -34,7 +34,10 @@ fn watchlist_is_fetched_per_key_and_missing_ones_are_skipped() {
     let gw = FakeGateway::new(Script { issues: [("OPS-7".to_string(), issue("OPS-7"))].into(), ..Default::default() });
     let out = run(&gw, &input(&["OPS-7", "GONE-1"])).unwrap();
     assert_eq!(keys(&out.watched), vec!["OPS-7"]);
-    assert_eq!(gw.calls().get_issue, vec![key("OPS-7"), key("GONE-1")]);
+    // Watchlist keys are fetched on concurrent threads, so call order is up to the scheduler.
+    let mut fetched = gw.calls().get_issue.clone();
+    fetched.sort();
+    assert_eq!(fetched, vec![key("GONE-1"), key("OPS-7")], "every watchlist key is fetched once, in any order");
 }
 
 #[test]
