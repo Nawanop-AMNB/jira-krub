@@ -35,8 +35,17 @@ pub struct RemoteCache {
 }
 
 impl RemoteCache {
+    /// Also finds a sub-task nested in `mine[..].subtasks` or
+    /// `watched[..].subtasks` — an unassigned sub-task of an assigned or
+    /// watched card never gets a row of its own here, but a staged entry on
+    /// it still needs its title and parent (R2/R4).
     pub fn issue(&self, key: &IssueKey) -> Option<&Issue> {
-        self.watched.iter().chain(self.mine.iter()).chain(self.history.iter()).find(|i| &i.key == key)
+        self.watched
+            .iter()
+            .chain(self.mine.iter())
+            .chain(self.history.iter())
+            .find(|i| &i.key == key)
+            .or_else(|| self.mine.iter().chain(self.watched.iter()).flat_map(|i| i.subtasks.iter()).find(|s| &s.key == key))
     }
     /// Remember a freshly fetched issue (from search or sync) for display.
     pub fn upsert_watched(&mut self, issue: &Issue) {
@@ -520,5 +529,45 @@ impl App {
             PushScope::Day(d) => d.format("%a %d %b").to_string(),
             PushScope::Week(w) => format!("week {} → {}", w.monday().format("%d %b"), w.sunday().format("%d %b")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::test_support::{issue, key};
+    use crate::domain::ParentRef;
+
+    /// R2/R4: a sub-task that is only reachable through its parent's
+    /// `subtasks` field (never assigned to me, so it has no row of its own)
+    /// must still be found by key, parent and all.
+    #[test]
+    fn remote_issue_finds_nested_subtask() {
+        let mut parent = issue("KAN-6");
+        let mut child = issue("KAN-7");
+        child.parent = Some(ParentRef { key: key("KAN-6"), summary: parent.summary.clone() });
+        parent.subtasks = vec![child];
+
+        let remote = RemoteCache { mine: vec![parent], ..Default::default() };
+
+        let found = remote.issue(&key("KAN-7")).expect("nested sub-task is found");
+        assert_eq!(found.key, key("KAN-7"));
+        assert_eq!(found.parent.as_ref().map(|p| &p.key), Some(&key("KAN-6")));
+    }
+
+    /// R2 phase 1c: the watchlist nests a watched card's own open sub-tasks
+    /// too, so a staged entry on one must be found the same way as a mine one.
+    #[test]
+    fn remote_issue_finds_subtask_of_watched_card() {
+        let mut parent = issue("OPS-7");
+        let mut child = issue("OPS-8");
+        child.parent = Some(ParentRef { key: key("OPS-7"), summary: parent.summary.clone() });
+        parent.subtasks = vec![child];
+
+        let remote = RemoteCache { watched: vec![parent], ..Default::default() };
+
+        let found = remote.issue(&key("OPS-8")).expect("nested sub-task is found");
+        assert_eq!(found.key, key("OPS-8"));
+        assert_eq!(found.parent.as_ref().map(|p| &p.key), Some(&key("OPS-7")));
     }
 }

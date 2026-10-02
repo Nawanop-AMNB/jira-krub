@@ -1,6 +1,7 @@
 use crate::application::ports::JiraGateway;
 use crate::domain::Issue;
 use anyhow::Result;
+use std::collections::HashSet;
 
 pub const MIN_QUERY_CHARS: usize = 2;
 pub const MAX_RESULTS: usize = 5;
@@ -52,7 +53,10 @@ pub fn jql_for(query: &str) -> String {
     }
 }
 
-/// Rank: exact key, then key starting with the query, then the rest (server order).
+/// Rank: exact key, then key starting with the query, then the rest (server
+/// order). Truncation counts *groups*, not issues: a sub-task's group is its
+/// parent's key, so several sub-task hits under one parent cost one slot, and
+/// results beyond the `MAX_RESULTS`th group are dropped.
 fn rank(mut issues: Vec<Issue>, query: &str) -> Vec<Issue> {
     let up = query.trim().to_uppercase();
     let score = |i: &Issue| -> u8 {
@@ -66,7 +70,20 @@ fn rank(mut issues: Vec<Issue>, query: &str) -> Vec<Issue> {
         }
     };
     issues.sort_by_key(|i| score(i));
-    issues.truncate(MAX_RESULTS);
+
+    let group_key = |i: &Issue| i.parent.as_ref().map_or(i.key.as_str(), |p| p.key.as_str()).to_string();
+    let mut seen: HashSet<String> = HashSet::new();
+    issues.retain(|i| {
+        let gk = group_key(i);
+        if seen.contains(&gk) {
+            return true;
+        }
+        if seen.len() >= MAX_RESULTS {
+            return false;
+        }
+        seen.insert(gk);
+        true
+    });
     issues
 }
 

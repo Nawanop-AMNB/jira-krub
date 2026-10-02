@@ -61,6 +61,15 @@ fn history_jql_uses_worklog_author_and_the_window() {
     assert!(jql.contains("worklogDate <= 2026-09-20"), "{jql}");
 }
 
+/// R2/R4: the assigned search asks for sub-tasks (so an unassigned sub-task
+/// of an assigned card can nest under it); the history search does not.
+#[test]
+fn sync_asks_subtasks_only_for_assigned() {
+    let gw = FakeGateway::default();
+    run(&gw, &input(&[])).unwrap();
+    assert_eq!(gw.calls().search_with_subtasks, vec![true, false], "assigned search first, then history");
+}
+
 #[test]
 fn mine_uses_embedded_worklogs_and_watchlist_is_fetched_per_issue_with_window() {
     let gw = FakeGateway::new(Script {

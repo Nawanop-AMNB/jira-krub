@@ -70,7 +70,9 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
     let me = gateway.myself()?;
     let w = &input.window;
 
-    let mine_raw = gateway.search_issues_with_worklogs(&input.jql, 200, &me.account_id)?;
+    // Assigned cards ask for sub-tasks too, so an unassigned sub-task of an
+    // assigned card can nest under it in the day view and My Tasks (R2/R4).
+    let mine_raw = gateway.search_issues_with_worklogs(&input.jql, 200, &me.account_id, true)?;
     progress(SyncProgress::Mine {
         account_id: me.account_id.clone(),
         display_name: me.display_name.clone(),
@@ -112,7 +114,7 @@ pub fn run_with(gateway: &dyn JiraGateway, input: &SyncInput, progress: &mut dyn
             let history_jql = history_jql.as_str();
             scope.spawn(move || {
                 sem.acquire();
-                let result = gateway.search_issues_with_worklogs(history_jql, 200, account_id);
+                let result = gateway.search_issues_with_worklogs(history_jql, 200, account_id, false);
                 sem.release();
                 result
             })

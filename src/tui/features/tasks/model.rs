@@ -1,6 +1,7 @@
-use crate::domain::{Issue, StatusCategory};
+use crate::domain::{Head, Issue, IssueKey, Nested, StatusCategory, nest};
 use crate::tui::app::{App, Screen};
 use crate::tui::widgets::TextInput;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
@@ -23,6 +24,11 @@ fn rank(category: StatusCategory) -> u8 {
 /// `New`) then alphabetically by status name within a category. Issues
 /// keep their input order inside a group (already `updated` DESC from the
 /// JQL — do not re-sort them).
+///
+/// Each assigned issue's own open (non-Done) sub-tasks are then appended to
+/// its group — not the sub-task's own status group, since it rides along
+/// with the card it was fetched for (R2/R4). A sub-task already present as
+/// its own assigned issue is not duplicated.
 pub fn group_issues(issues: &[Issue]) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
     for issue in issues.iter().filter(|i| i.status_category != StatusCategory::Done) {
@@ -30,6 +36,18 @@ pub fn group_issues(issues: &[Issue]) -> Vec<Group> {
             Some(g) => g.issues.push(issue.clone()),
             None => groups.push(Group { status: issue.status.clone(), category: issue.status_category, issues: vec![issue.clone()] }),
         }
+    }
+    let mut seen: HashSet<IssueKey> = groups.iter().flat_map(|g| g.issues.iter().map(|i| i.key.clone())).collect();
+    for g in &mut groups {
+        let mut children = Vec::new();
+        for parent in &g.issues {
+            for child in &parent.subtasks {
+                if child.status_category != StatusCategory::Done && seen.insert(child.key.clone()) {
+                    children.push(child.clone());
+                }
+            }
+        }
+        g.issues.extend(children);
     }
     groups.sort_by(|a, b| rank(a.category).cmp(&rank(b.category)).then_with(|| a.status.cmp(&b.status)));
     groups
@@ -47,9 +65,28 @@ pub fn visible_groups(app: &App, m: &Model) -> Vec<Group> {
     groups
 }
 
-/// Visible issues without their group headers: what `Model::selected` indexes.
+/// Each status group's issues nested into parent/child/context display rows
+/// (R2/R4): a sub-task goes under its parent's row when the parent is also
+/// in that status group, otherwise under a `Context` head. Nesting never
+/// crosses a status group, same as it never crosses a day-view section.
+pub fn visible_nested(app: &App, m: &Model) -> Vec<(Group, Vec<Nested>)> {
+    visible_groups(app, m).into_iter().map(|g| { let nested = nest(&g.issues); (g, nested) }).collect()
+}
+
+/// Selectable issues in render order: skip `Context` heads, which are not
+/// selectable — what `Model::selected` indexes.
 pub fn visible_issues(app: &App, m: &Model) -> Vec<Issue> {
-    visible_groups(app, m).into_iter().flat_map(|g| g.issues).collect()
+    visible_nested(app, m)
+        .into_iter()
+        .flat_map(|(_, nested)| nested.into_iter().flat_map(|n| {
+            let mut v = Vec::new();
+            if let Head::Issue(i) = n.head {
+                v.push(i);
+            }
+            v.extend(n.children);
+            v
+        }))
+        .collect()
 }
 
 /// Assigned issues that are not done, before filtering — the box title's `N`.

@@ -1,6 +1,14 @@
 use super::search::{MAX_RESULTS, run};
 use crate::application::ports::GatewayErrorKind;
-use crate::application::test_support::{FakeGateway, Script, gateway_error, issue};
+use crate::application::test_support::{FakeGateway, Script, gateway_error, issue, key};
+use crate::domain::ParentRef;
+
+/// A sub-task hit: its own key/summary, with `parent` pointing at `parent_key`.
+fn subtask(k: &str, parent_key: &str) -> crate::domain::Issue {
+    let mut i = issue(k);
+    i.parent = Some(ParentRef { key: key(parent_key), summary: format!("summary of {parent_key}") });
+    i
+}
 
 #[test]
 fn query_shorter_than_two_chars_returns_empty_without_calling_the_gateway() {
@@ -40,6 +48,22 @@ fn text_query_error_propagates() {
     let err = run(&gw, "sso outage").unwrap_err();
     assert!(err.to_string().contains("offline"));
     assert_eq!(gw.calls().jql.len(), 1);
+}
+
+#[test]
+fn search_truncates_by_group() {
+    let mut server_order = vec![subtask("KAN-15", "KAN-12"), subtask("KAN-16", "KAN-12"), subtask("KAN-17", "KAN-12")];
+    for n in 1..=6 {
+        server_order.push(issue(&format!("KAN-{n}")));
+    }
+    let gw = FakeGateway::new(Script { searches: [Ok(server_order)].into(), ..Default::default() });
+    let out = run(&gw, "ops").unwrap();
+    let keys: Vec<&str> = out.iter().map(|i| i.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["KAN-15", "KAN-16", "KAN-17", "KAN-1", "KAN-2", "KAN-3", "KAN-4"],
+        "3 sub-tasks count as one group, so KAN-1..KAN-4 fill the remaining 4 slots and KAN-5/KAN-6 are dropped"
+    );
 }
 
 #[test]

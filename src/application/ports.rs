@@ -52,7 +52,10 @@ pub trait JiraGateway: Send + Sync {
     fn myself(&self) -> Result<Me>;
     fn search_issues(&self, jql: &str, max: usize) -> Result<Vec<Issue>>;
     /// Same search, plus each issue's embedded worklog page for `account_id`.
-    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>>;
+    /// `with_subtasks` also requests each issue's own open/done children —
+    /// sync asks for this on the assigned search (so an unassigned sub-task
+    /// of an assigned card can nest under it) but not on the history search.
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str, with_subtasks: bool) -> Result<Vec<IssueWithWorklogs>>;
     fn get_issue(&self, key: &IssueKey) -> Result<Issue>;
     /// Worklogs on one issue by `account_id`, optionally only those started
     /// inside `window` (server-side filter, cheap even for years-old issues).

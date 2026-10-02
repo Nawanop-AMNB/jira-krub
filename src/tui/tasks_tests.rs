@@ -6,7 +6,7 @@ use super::features::tasks;
 use super::test_support::{drain_until_nonempty, harness, render, render_styles, script_with_issues, settle};
 use super::widgets::text::display_width;
 use crate::application::test_support::{issue, key};
-use crate::domain::{Issue, StatusCategory};
+use crate::domain::{Issue, ParentRef, StatusCategory};
 use chrono::Days;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::style::Modifier;
@@ -426,3 +426,91 @@ fn empty_state_waits_for_the_full_sync() {
     assert!(rows.iter().any(|r| r.contains("nothing assigned to you · r sync")), "{}", rows.join("\n"));
 }
 
+// ---- subtask grouping (phase 1) -------------------------------------------
+
+/// A sub-task: its own key/summary/status, with `parent` pointing at `parent_key`.
+fn child_task(k: &str, summary: &str, status: &str, category: StatusCategory, parent_key: &str, parent_summary: &str) -> Issue {
+    let mut i = task(k, status, category);
+    i.summary = summary.to_string();
+    i.parent = Some(ParentRef { key: key(parent_key), summary: parent_summary.to_string() });
+    i
+}
+
+#[test]
+fn my_tasks_nests_children() {
+    let parent = with_summary(task("KAN-12", "In Progress", StatusCategory::Indeterminate), "Fix auth");
+    let child = child_task("KAN-15", "Dev", "In Progress", StatusCategory::Indeterminate, "KAN-12", "Fix auth");
+    let mut h = harness("tasks-nest-children", script_with_issues(vec![parent, child]));
+
+    assert_eq!(visible_keys(&h.app), vec!["KAN-12", "KAN-15"], "the child follows its parent");
+    let rows = render(&mut h.app);
+    let p = row_with(&rows, "KAN-12");
+    assert!(rows[p].contains("▸1"), "{:?}", rows[p]);
+    let c = row_with(&rows, "KAN-15");
+    assert!(c > p);
+    assert!(rows[c].contains("↳"), "{:?}", rows[c]);
+
+    press(&mut h.app, KeyCode::Down);
+    assert_eq!(visible_keys(&h.app)[tasks_model(&h.app).selected], "KAN-15", "Down from the parent selects the child");
+
+    press(&mut h.app, KeyCode::Enter);
+    assert_eq!(h.opener.urls(), vec!["https://acme.atlassian.net/browse/KAN-15".to_string()], "Enter on a child opens the child's URL");
+}
+
+#[test]
+fn epic_children_not_nested() {
+    // An issue whose parent is an Epic is never a sub-task — `parent` stays
+    // `None` (filtered out at parse time, R2/R4), so it renders plainly.
+    let story = with_summary(task("KAN-20", "To Do", StatusCategory::New), "A story under an epic");
+    assert_eq!(story.parent, None);
+    let mut h = harness("tasks-epic-not-nested", script_with_issues(vec![story]));
+
+    assert_eq!(visible_keys(&h.app), vec!["KAN-20"]);
+    let rows = render(&mut h.app);
+    let r = row_with(&rows, "KAN-20");
+    assert!(!rows[r].contains("↳"), "{:?}", rows[r]);
+    assert!(!rows[r].contains('▸'), "a plain issue has no child badge: {:?}", rows[r]);
+}
+
+// ---- My Tasks expands assigned cards' own sub-tasks (phase 1b) ------------
+
+#[test]
+fn my_tasks_lists_unassigned_open_subtasks() {
+    let mut parent = with_summary(task("KAN-6", "In Progress", StatusCategory::Indeterminate), "Testing Task 2");
+    parent.subtasks = vec![
+        child_task("KAN-7", "[DEV]", "To Do", StatusCategory::New, "KAN-6", "Testing Task 2"),
+        child_task("KAN-8", "QA", "Done", StatusCategory::Done, "KAN-6", "Testing Task 2"),
+    ];
+    let mut h = harness("tasks-mine-subtasks", script_with_issues(vec![parent]));
+
+    assert_eq!(visible_keys(&h.app), vec!["KAN-6", "KAN-7"], "KAN-8 is done; KAN-7 nests under its parent despite its own status");
+    let rows = render(&mut h.app);
+    let p = row_with(&rows, "KAN-6");
+    assert!(rows[p].contains("▸1"), "{:?}", rows[p]);
+    let c = row_with(&rows, "KAN-7");
+    assert!(c > p);
+    assert!(rows[c].contains("↳"), "{:?}", rows[c]);
+    assert!(rows.iter().any(|r| r.contains("─ In Progress")), "{}", rows.join("\n"));
+    assert!(!rows.iter().any(|r| r.contains("─ To Do")), "KAN-7's own status never creates a separate group:\n{}", rows.join("\n"));
+
+    press(&mut h.app, KeyCode::Down);
+    assert_eq!(visible_keys(&h.app)[tasks_model(&h.app).selected], "KAN-7", "Down from the parent selects the nested child");
+
+    press(&mut h.app, KeyCode::Enter);
+    assert_eq!(h.opener.urls(), vec!["https://acme.atlassian.net/browse/KAN-7".to_string()], "Enter on a nested child opens the child's URL");
+
+    let rows = render(&mut h.app);
+    assert!(rows.iter().any(|r| r.contains("my tasks · 1 ")), "the box title counts only the assigned card, not its sub-task:\n{}", rows.join("\n"));
+}
+
+#[test]
+fn a_subtask_without_an_updated_date_shows_no_updated_label() {
+    // Jira's `subtasks` field carries no `updated`; "updated 20000d ago" would be a lie.
+    let mut parent = with_summary(task("KAN-6", "In Progress", StatusCategory::Indeterminate), "Testing Task 2");
+    parent.subtasks = vec![child_task("KAN-7", "[DEV]", "To Do", StatusCategory::New, "KAN-6", "Testing Task 2")];
+    let mut h = harness("tasks-subtask-no-updated", script_with_issues(vec![parent]));
+
+    let rows = render(&mut h.app);
+    let c = row_with(&rows, "KAN-7");
+    assert!(!rows[c].contains("updated"), "{:?}", rows[c]);
+}

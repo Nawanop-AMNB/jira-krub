@@ -293,6 +293,74 @@ fn search_requests_due_and_updated_fields() {
     }
 }
 
+/// R2/R4: subtask grouping needs `parent`/`issuetype` everywhere, but
+/// `subtasks` only when the caller actually asks for it — it can be a large
+/// payload and a `with_subtasks: false` search never displays a result's own
+/// children. `get_issue` is the odd one out: it's the per-key watchlist
+/// fetch, and a watched card that isn't assigned to me has no other way to
+/// get its own open sub-tasks (R2 phase 1c), so it asks for `subtasks` too.
+#[test]
+fn requests_ask_for_the_right_fields() {
+    let (base, seen) = fake_jira(vec![
+        json!({ "issues": [], "isLast": true }),
+        json!({ "issues": [], "isLast": true }),
+        json!({ "key": "A-1", "fields": { "summary": "S", "status": { "name": "To Do" } } }),
+    ]);
+    let gw = gateway(&base);
+    gw.search_issues("assignee = currentUser()", 50).expect("searched");
+    gw.search_issues_with_worklogs("assignee = currentUser()", 50, "acc-1", false).expect("searched");
+    gw.get_issue(&key("A-1")).expect("fetched");
+
+    let requests = seen.lock().unwrap().clone();
+    let fields_of = |i: usize| requests[i].query().get("fields").cloned().expect("a fields parameter");
+
+    let search_fields = fields_of(0);
+    for want in ["parent", "issuetype", "subtasks"] {
+        assert!(search_fields.contains(want), "search_issues fields {search_fields:?} must request {want}");
+    }
+
+    let with_worklogs_fields = fields_of(1);
+    assert!(with_worklogs_fields.contains("parent"), "search_issues_with_worklogs fields {with_worklogs_fields:?} must request parent");
+    assert!(with_worklogs_fields.contains("issuetype"), "search_issues_with_worklogs fields {with_worklogs_fields:?} must request issuetype");
+    assert!(!with_worklogs_fields.contains("subtasks"), "search_issues_with_worklogs fields {with_worklogs_fields:?} must NOT request subtasks");
+}
+
+/// R2 phase 1c: the watchlist shows a watched card's open sub-tasks for ANY
+/// watched card, not just assigned ones, so the per-key fetch needs its own
+/// `subtasks` — still one request per watched key.
+#[test]
+fn get_issue_requests_subtasks() {
+    let (base, seen) = fake_jira(vec![json!({ "key": "A-1", "fields": { "summary": "S", "status": { "name": "To Do" } } })]);
+    gateway(&base).get_issue(&key("A-1")).expect("fetched");
+
+    let fields = only(&seen).query().get("fields").cloned().expect("a fields parameter");
+    for want in ["subtasks", "parent", "issuetype"] {
+        assert!(fields.contains(want), "get_issue fields {fields:?} must request {want}");
+    }
+}
+
+/// R2/R4: sync's assigned search passes `with_subtasks: true` so an
+/// unassigned sub-task of an assigned card can nest under it; the history
+/// search passes `false` — it only ever shows issues with no nested children.
+#[test]
+fn assigned_search_requests_subtasks_history_does_not() {
+    let (base, seen) = fake_jira(vec![json!({ "issues": [], "isLast": true }), json!({ "issues": [], "isLast": true })]);
+    let gw = gateway(&base);
+    gw.search_issues_with_worklogs("assignee = currentUser()", 50, "acc-1", true).expect("searched");
+    gw.search_issues_with_worklogs("worklogAuthor = currentUser()", 50, "acc-1", false).expect("searched");
+
+    let requests = seen.lock().unwrap().clone();
+    let fields_of = |i: usize| requests[i].query().get("fields").cloned().expect("a fields parameter");
+
+    let with = fields_of(0);
+    assert!(with.contains("subtasks"), "with_subtasks=true fields {with:?} must request subtasks");
+    assert!(with.contains("worklog"), "fields {with:?} must still request worklog");
+
+    let without = fields_of(1);
+    assert!(!without.contains("subtasks"), "with_subtasks=false fields {without:?} must NOT request subtasks");
+    assert!(without.contains("worklog"), "fields {without:?} must still request worklog");
+}
+
 #[test]
 fn the_embedded_search_page_keeps_only_my_worklogs() {
     let (base, _seen) = fake_jira(vec![json!({
@@ -311,7 +379,7 @@ fn the_embedded_search_page_keeps_only_my_worklogs() {
         }],
         "isLast": true
     })]);
-    let out = gateway(&base).search_issues_with_worklogs("assignee = currentUser()", 50, "acc-1").expect("searched");
+    let out = gateway(&base).search_issues_with_worklogs("assignee = currentUser()", 50, "acc-1", false).expect("searched");
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].total, 2, "the total counts everyone, so the page can be known incomplete");
     let ids: Vec<&str> = out[0].my_worklogs.iter().map(|w| w.id.as_str()).collect();
