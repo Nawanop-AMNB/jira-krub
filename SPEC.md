@@ -196,6 +196,9 @@ Ordered by priority.
   `subtasks` too, for any watched card, not just assigned ones). A legacy
   watchlist entry on a sub-task's own key migrates to its parent the next
   time `w` is pressed on it.
+- **Parent cards stay stageable** (decided 2026-10-02): a card with
+  sub-tasks can still be staged on directly; nothing redirects or blocks it.
+  Whether Jira accepts a worklog there is the site's rule, surfaced on push.
 - AC: watch `OPS-7` (assigned to someone else); after restart and refresh it
   is still in the grid at the top with its summary.
 - AC: add a 1h entry on `OPS-7` and push; Jira shows the worklog under my

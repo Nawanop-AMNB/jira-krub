@@ -656,3 +656,41 @@ fn watchlist_shows_open_subtasks_of_watched_card() {
     let c = row_with(&rows, "OPS-8");
     assert!(rows[c].contains("↳"), "{:?}", rows[c]);
 }
+
+// ---- R2: parent cards stay stageable (decided 2026-10-02) -----------------
+
+#[test]
+fn a_parent_card_with_subtasks_stages_on_the_parent_itself() {
+    let parent = with_subtasks(
+        with_summary(issue("KAN-6"), "Testing Task 2"),
+        vec![subtask_of("KAN-7", "[DEV]", StatusCategory::New, "KAN-6", "Testing Task 2")],
+    );
+    let (mut h, date) = day_view_with("day-stage-parent-mine", vec![parent]);
+    let idx = ticket_keys(&h.app).iter().position(|k| k == "KAN-6").expect("the parent row");
+
+    day_action(&mut h.app, day::Action::SelectTicket(idx));
+    day_action(&mut h.app, day::Action::QuickStage);
+
+    let entries = h.app.ledger.entries_on(date);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].issue_key, key("KAN-6"), "staging is not redirected to a sub-task");
+}
+
+#[test]
+fn a_parent_search_result_stages_on_the_parent_and_watches_it() {
+    let (mut h, date) = day_view("day-stage-parent-jira");
+    let parent = with_subtasks(
+        with_summary(issue("KAN-12"), "Fix auth"),
+        vec![subtask_of("KAN-15", "Dev", StatusCategory::New, "KAN-12", "Fix auth")],
+    );
+    with_search_results(&mut h.app, vec![parent]);
+    let idx = ticket_keys(&h.app).iter().position(|k| k == "KAN-12").expect("the parent row");
+
+    day_action(&mut h.app, day::Action::SelectTicket(idx));
+    day_action(&mut h.app, day::Action::QuickStage);
+
+    let entries = h.app.ledger.entries_on(date);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].issue_key, key("KAN-12"));
+    assert_eq!(h.app.ledger.watchlist(), &[key("KAN-12")]);
+}
