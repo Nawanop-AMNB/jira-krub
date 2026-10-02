@@ -68,10 +68,10 @@ work, not logging it.
 
 ┌ my tasks · 8 ────────────────────────────────────────────────────────────────┐
 │ 🔍  type to filter                                                           │
-│ ─ In Progress · 3 ───────────────────────────────────────────────────────── │
+│ ─ In Progress (assigned to me: 3) ──────────────────────────────────────────│
 │▶  KAN-12    Fix auth token expiry               due Fri 19 Sep  updated today│
 │   KAN-9     Refactor worklog sync               due today       updated 1d ago│
-│ ─ To Do · 4 ─────────────────────────────────────────────────────────────── │
+│ ─ To Do (assigned to me: 4) ────────────────────────────────────────────────│
 │   KAN-14    Migrate config                      overdue 2d      updated 2d ago│
 └──────────────────────────────────────────────────────────────────────────────┘
  Enter open in Jira · ↑↓ move · / filter · r sync · Tab worklogs · , settings · q quit
@@ -81,6 +81,13 @@ work, not logging it.
 first row lands in the filter box; typing filters at once, `Ctrl+U` clears.
 Due dates show as `due today`, `due Sat 19 Sep` (this week), `due 30 Sep`, or
 `overdue Nd`; overdue and today are highlighted.
+
+Sub-tasks (teams often log work on "Dev"/"Review"/"QA" instead of the parent
+card) nest under their parent within each status group: the parent gets a
+dim `▸N`, a child renders indented (`↳`) below it; if the parent itself
+isn't assigned to you, a dim row carries its key and summary instead.
+`Enter` on a child opens the child's own issue. An assigned card's own open
+sub-tasks are nested the same way, even when they aren't assigned to you.
 
 **Worklogs** — one row per day of the week: progress bar (`█` pushed, `▓`
 staged), pushed hours, status, `+Xh staged`. Green means Jira has it; staged
@@ -123,6 +130,16 @@ Right: the entries staged for that day, plus what is already in Jira.
   marks them `~`, `⌫` marks `✗` for deletion (again to undo). The next push
   sends them as PUT / DELETE in the same batch.
 - `[` `]` previous / next day, `←` `→` switch pane, `Esc` steps back.
+- Sub-tasks nest the same way in every section of the tickets pane; only
+  parent cards are ever watched — staging or pressing `w` on a sub-task
+  resolves to and watches its parent instead, which then lists that
+  sub-task nested under it in the watchlist. The "jira" search section
+  additionally shows a result's own open sub-tasks (up to 5, `… +N more`
+  expands in place) and groups several sub-task hits of
+  the same parent under one head. The "mine" section does the same for an
+  assigned card's own open sub-tasks, with no extra request; "logged
+  recently" never expands them. The prepare pane's title column reads
+  `child · parent summary` for a staged sub-task.
 
 Durations use Jira grammar: `2h`, `1h30m`, `90m`, `1d`. Unit required, no
 decimals, snapped to 15 min. Worklogs are sent with `adjustEstimate=leave`,

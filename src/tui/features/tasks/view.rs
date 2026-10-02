@@ -1,5 +1,5 @@
-use super::model::{Action, Model, open_count, visible_groups};
-use crate::domain::{Week, due_label, updated_label};
+use super::model::{Action, Model, open_count, visible_nested};
+use crate::domain::{EPOCH, Head, Issue, Week, due_label, updated_label};
 use crate::tui::action::Action as Global;
 use crate::tui::app::App;
 use crate::tui::hit::{HitArea, HitRegistry};
@@ -79,9 +79,35 @@ struct L {
     row: Option<usize>,
 }
 
+/// One `Normal`/`Child` issue row: `lead` is `"↳"` for a sub-task, empty for
+/// a plain ticket or a parent; `child_count` drives the parent's `▸N` badge.
+fn issue_line(app: &App, week: &Week, sum_w: u16, selected: bool, issue: &Issue, lead: &str, child_count: usize) -> Line<'static> {
+    let due = due_label(issue.due, app.today, week).unwrap_or_default();
+    let due_style = if due.starts_with("overdue") || due == "due today" { theme::warn() } else { theme::dim() };
+    let badge = if child_count > 0 { format!("▸{child_count}") } else { String::new() };
+    // A sub-task's key column grows by `↳ ` and its summary gives that width back.
+    let (key_text, key_w) = if lead.is_empty() { (issue.key.to_string(), C_KEY) } else { (format!("{lead} {}", issue.key), C_KEY + 2) };
+    let sum_w = sum_w.saturating_sub(key_w - C_KEY + if badge.is_empty() { 0 } else { display_width(&badge) as u16 + 1 });
+    let mut summary = pad_to_width(&truncate_to_width(&issue.summary, sum_w as usize), sum_w as usize);
+    if !badge.is_empty() {
+        summary.push(' ');
+        summary.push_str(&badge);
+    }
+    Line::from(vec![
+        Span::styled(if selected { "▶ " } else { "  " }, theme::accent()),
+        Span::styled(pad_to_width(&truncate_to_width(&key_text, key_w as usize), key_w as usize), theme::issue_key()),
+        Span::raw(" ".repeat(GAP as usize)),
+        Span::raw(summary),
+        Span::raw(" ".repeat(GAP as usize)),
+        Span::styled(pad_to_width(&due, C_DUE as usize), due_style),
+        // `EPOCH` means unknown (a sub-task from its parent's `subtasks` field).
+        Span::styled(if issue.updated == EPOCH { String::new() } else { updated_label(issue.updated, app.today) }, theme::dim()),
+    ])
+}
+
 fn draw_list(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut HitRegistry) {
-    let groups = visible_groups(app, m);
-    if groups.is_empty() {
+    let nested_groups = visible_nested(app, m);
+    if nested_groups.is_empty() {
         frame.render_widget(
             Paragraph::new(Span::styled("   no match", theme::dim())),
             Rect { x: area.x, y: area.y, width: area.width, height: 1 },
@@ -93,27 +119,27 @@ fn draw_list(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut Hit
     let sum_w = summary_width(area.width);
     let mut lines: Vec<L> = Vec::new();
     let mut i = 0usize;
-    for g in &groups {
-        let label = format!(" ─ {} · {} ", g.status, g.issues.len());
+    for (g, nested) in &nested_groups {
+        // Sub-tasks listed under an assigned card are not mine; say what is counted.
+        let assigned = g.issues.iter().filter(|i| app.remote.mine.iter().any(|m| m.key == i.key)).count();
+        let label = format!(" ─ {} (assigned to me: {assigned}) ", g.status);
         let pad = (area.width as usize).saturating_sub(display_width(&label));
         lines.push(L { text: Line::from(Span::styled(format!("{label}{}", "─".repeat(pad)), theme::dim())), row: None });
-        for issue in &g.issues {
-            let selected = !m.filter_focused && i == m.selected;
-            let due = due_label(issue.due, app.today, &week).unwrap_or_default();
-            let due_style = if due.starts_with("overdue") || due == "due today" { theme::warn() } else { theme::dim() };
-            lines.push(L {
-                text: Line::from(vec![
-                    Span::styled(if selected { "▶ " } else { "  " }, theme::accent()),
-                    Span::styled(pad_to_width(&truncate_to_width(issue.key.as_str(), C_KEY as usize), C_KEY as usize), theme::issue_key()),
-                    Span::raw(" ".repeat(GAP as usize)),
-                    Span::raw(pad_to_width(&truncate_to_width(&issue.summary, sum_w as usize), sum_w as usize)),
-                    Span::raw(" ".repeat(GAP as usize)),
-                    Span::styled(pad_to_width(&due, C_DUE as usize), due_style),
-                    Span::styled(updated_label(issue.updated, app.today), theme::dim()),
-                ]),
-                row: Some(i),
-            });
-            i += 1;
+        for n in nested {
+            if let Head::Context(parent) = &n.head {
+                let text = format!("  {:<w$}{}", parent.key.as_str(), truncate_to_width(&parent.summary, sum_w as usize), w = (C_KEY + GAP) as usize);
+                lines.push(L { text: Line::from(Span::styled(text, theme::dim())), row: None });
+            }
+            if let Head::Issue(issue) = &n.head {
+                let selected = !m.filter_focused && i == m.selected;
+                lines.push(L { text: issue_line(app, &week, sum_w, selected, issue, "", n.children.len()), row: Some(i) });
+                i += 1;
+            }
+            for child in &n.children {
+                let selected = !m.filter_focused && i == m.selected;
+                lines.push(L { text: issue_line(app, &week, sum_w, selected, child, "↳", 0), row: Some(i) });
+                i += 1;
+            }
         }
     }
 

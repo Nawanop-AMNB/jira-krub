@@ -175,6 +175,30 @@ Ordered by priority.
 - Issues that have my worklogs in the visible week but are neither assigned
   nor watched still appear (history is never hidden), grouped last and dimmed.
 - Order: watchlist → assigned (by updated desc) → other-with-worklogs.
+- **Sub-task nesting** (phase 1): teams log work on sub-tasks ("Dev",
+  "Review", "QA") rather than the parent card, so sub-tasks render indented
+  under their parent wherever issues are listed (My Tasks, the day view,
+  Jira search results), never crossing a section/group. If the parent is
+  also in the list its row gets a dim `▸N` (N children); if not, one dim,
+  non-selectable row carries the parent's key and summary instead, so a bare
+  "Dev" still shows what it is about. `Issue.matches` also matches on the
+  parent's key/summary, so filtering a sub-task by its parent's text works.
+- **Mine's own sub-tasks** (phase 1b): the assigned search also asks Jira
+  for each card's open/done children, so an unassigned sub-task of an
+  assigned card nests under it in `mine` and My Tasks without any extra
+  request — the history search does not ask for this and never expands.
+  Capped at 5 children per card in the day view with the same `… +N more`
+  expansion as the jira section; no cap in My Tasks.
+- **Only parent cards are watched** (phase 1c): a sub-task is never added to
+  the watchlist — `w` on one, or staging one, resolves to and watches its
+  parent instead, and the watchlist then lists that card's own open
+  sub-tasks nested under it (the per-key `get_issue` fetch asks for
+  `subtasks` too, for any watched card, not just assigned ones). A legacy
+  watchlist entry on a sub-task's own key migrates to its parent the next
+  time `w` is pressed on it.
+- **Parent cards stay stageable** (decided 2026-10-02): a card with
+  sub-tasks can still be staged on directly; nothing redirects or blocks it.
+  Whether Jira accepts a worklog there is the site's rule, surfaced on push.
 - AC: watch `OPS-7` (assigned to someone else); after restart and refresh it
   is still in the grid at the top with its summary.
 - AC: add a 1h entry on `OPS-7` and push; Jira shows the worklog under my
@@ -219,9 +243,19 @@ Ordered by priority.
   - Staging a ticket from the "jira" section also adds it to the watchlist.
   - `w` toggles the highlighted ticket on/off the watchlist. Same ticket
     can be staged more than once.
+  - Sub-task nesting (R2) applies to every section. The "jira" section also
+    expands a result's own (non-done) children even when they aren't
+    separate hits, or shares one head across several sub-task hits of the
+    same parent; capped at 5 children per group with a selectable
+    `… +N more` row that expands it in place (Enter/Space/double-click),
+    reset when the search query changes. Staging a sub-task watches its
+    parent, never the sub-task itself (R2 phase 1c). `mine` expands the same
+    way, from each assigned card's own open sub-tasks (R2 phase 1b);
+    `history` never does.
 - **Right pane: prepare logwork (staged entries for this day).**
   - Columns: start · duration · ticket · **title** (issue summary from Jira,
-    read-only) · **description** (the worklog comment, editable). Pending rows first (marker
+    read-only — for a sub-task, `child · parent summary`, e.g.
+    `Dev · Fix auth token expiry`) · **description** (the worklog comment, editable). Pending rows first (marker
     `+` new, `~` edited, `✗` delete, `!` failed), then a `─ in jira ─`
     divider and the worklogs Jira already has, dimmed with `✓`.
   - Rows in Jira are editable too: the cursor moves into them, `s`/`d`/`n`/`e`
@@ -497,6 +531,12 @@ unless a field was edited — then `discard changes? [y/n]`).
   - `updated today` / `updated 3d ago`, day granularity (relative to the
     app's `today`, deterministic), dim, right-aligned.
 - Sort inside a group: `updated` descending (Jira's order from the JQL).
+- Sub-task nesting (R2) applies inside each status group: a child renders
+  indented under its parent (or a dim `Context` head when the parent isn't
+  in that group), never across groups. `Model::selected` walks selectable
+  rows only — `Context` heads are skipped, `Enter` on a child opens the
+  child's own URL. An assigned card's own open sub-tasks (R2 phase 1b) land
+  in the card's status group even when their own status differs; no cap.
 - Box title: `my tasks · N`; `· offline` appended when the last sync
   failed on network; `syncing…` while a sync runs.
 - Filter box on the first row, same rule as every search box (R9a): type to
@@ -637,13 +677,13 @@ Three screens. All mockups at 80 columns.
 
 ┌ my tasks · 8 · synced 2m ago ────────────────────────────────────────────────┐
 │ 🔍  type to filter                                                           │
-│ ─ In Progress · 3 ───────────────────────────────────────────────────────── │
+│ ─ In Progress (assigned to me: 3) ──────────────────────────────────────────│
 │▶  KAN-12    Fix auth token expiry               due Fri 19 Sep  updated today│
 │   KAN-9     Refactor worklog sync               due today       updated 1d ago│
 │   STW-140   Support: SSO outage                                 updated 3d   │
-│ ─ In Review · 1 ─────────────────────────────────────────────────────────── │
+│ ─ In Review (assigned to me: 1) ────────────────────────────────────────────│
 │   KAN-11    Add retry to client                 overdue 2d      updated 5h   │
-│ ─ To Do · 4 ─────────────────────────────────────────────────────────────── │
+│ ─ To Do (assigned to me: 4) ────────────────────────────────────────────────│
 │   KAN-14    Migrate config                      due 30 Sep      updated 2d   │
 │   KAN-15    Fix pagination                                      updated 6d   │
 │   KAN-16    Write docs                                          updated 8d   │

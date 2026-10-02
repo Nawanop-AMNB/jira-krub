@@ -34,7 +34,10 @@ fn watchlist_is_fetched_per_key_and_missing_ones_are_skipped() {
     let gw = FakeGateway::new(Script { issues: [("OPS-7".to_string(), issue("OPS-7"))].into(), ..Default::default() });
     let out = run(&gw, &input(&["OPS-7", "GONE-1"])).unwrap();
     assert_eq!(keys(&out.watched), vec!["OPS-7"]);
-    assert_eq!(gw.calls().get_issue, vec![key("OPS-7"), key("GONE-1")]);
+    // Watchlist keys are fetched on concurrent threads, so call order is up to the scheduler.
+    let mut fetched = gw.calls().get_issue.clone();
+    fetched.sort();
+    assert_eq!(fetched, vec![key("GONE-1"), key("OPS-7")], "every watchlist key is fetched once, in any order");
 }
 
 #[test]
@@ -56,6 +59,15 @@ fn history_jql_uses_worklog_author_and_the_window() {
     assert!(jql.contains("worklogAuthor = currentUser()"), "{jql}");
     assert!(jql.contains("worklogDate >= 2026-09-14"), "{jql}");
     assert!(jql.contains("worklogDate <= 2026-09-20"), "{jql}");
+}
+
+/// R2/R4: the assigned search asks for sub-tasks (so an unassigned sub-task
+/// of an assigned card can nest under it); the history search does not.
+#[test]
+fn sync_asks_subtasks_only_for_assigned() {
+    let gw = FakeGateway::default();
+    run(&gw, &input(&[])).unwrap();
+    assert_eq!(gw.calls().search_with_subtasks, vec![true, false], "assigned search first, then history");
 }
 
 #[test]

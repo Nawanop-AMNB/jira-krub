@@ -1,5 +1,5 @@
 use super::model::{Action, Cell, CellEdit, Model, Pane};
-use super::rows::{PrepareRow, Section, prepare_rows, ticket_rows};
+use super::rows::{PrepareRow, RowKind, Section, prepare_rows, ticket_rows};
 use crate::application::ids::new_entry_id;
 use crate::application::use_cases::search;
 use crate::domain::{Issue, IssueKey, StartTime, Week, duration};
@@ -163,15 +163,47 @@ pub fn on_search_done(app: &mut App, req_id: u64, query: String, result: Result<
 
 // ---- helpers -------------------------------------------------------------
 
+/// The key `w` or auto-watch affects for `issue`: itself, unless it is a
+/// sub-task — only parent cards are ever on the watchlist (R2 phase 1c), so
+/// staging or pressing `w` on a sub-task always targets its parent.
+fn watch_target(issue: &Issue) -> IssueKey {
+    issue.parent.as_ref().map(|p| p.key.clone()).unwrap_or_else(|| issue.key.clone())
+}
+
+/// The `Issue` to remember in `RemoteCache::watched` right after watching
+/// `watch_target(issue)`: `issue` itself, or for a sub-task its parent — the real
+/// parent from the current search results when it's there (it carries its
+/// own `subtasks`), else a stand-in built from the sub-task's own `parent`
+/// ref with just `issue` nested under it. Either way the watchlist shows a
+/// summary and the triggering child at once, without waiting for the next
+/// sync's `get_issue`.
+fn watch_issue_for(issue: &Issue, search_results: &[Issue]) -> Issue {
+    let Some(parent) = &issue.parent else { return issue.clone() };
+    search_results.iter().find(|r| r.key == parent.key).cloned().unwrap_or_else(|| {
+        let mut stand_in = Issue::new(parent.key.clone(), parent.summary.clone(), "");
+        stand_in.subtasks = vec![issue.clone()];
+        stand_in
+    })
+}
+
 fn stage(app: &mut App, issue: &Issue, auto_watch: bool) {
     let default_start = app.default_start();
     let quick = app.quick_stage_seconds();
     let auto_watch = auto_watch && app.auto_watch();
     let Screen::Day(m) = &app.screen else { return };
     let date = m.date;
-    if auto_watch && app.ledger.watch(&issue.key) {
-        app.remote.upsert_watched(issue);
-        app.set_status(format!("watching {}", issue.key));
+    if auto_watch {
+        let target = watch_target(issue);
+        let watch_issue = watch_issue_for(issue, &m.s.results);
+        if app.ledger.watch(&target) {
+            app.remote.upsert_watched(&watch_issue);
+            app.set_status(format!("watching {target}"));
+        }
+        // A legacy watchlist entry on the sub-task's own key (from before
+        // only parents were watchable) is superseded by its parent now.
+        if issue.key != target {
+            app.ledger.unwatch(&issue.key);
+        }
     }
     let id = new_entry_id();
     app.ledger.quick_stage(id.clone(), issue.key.clone(), date, default_start, quick);
@@ -189,6 +221,13 @@ fn stage(app: &mut App, issue: &Issue, auto_watch: bool) {
 
 fn selected_ticket(app: &App, m: &Model) -> Option<super::rows::TicketRow> {
     ticket_rows(app, m).get(m.ticket_sel).cloned()
+}
+
+/// Lifts the jira-section `… +N more` cap for the group keyed by `key`.
+fn expand_group(app: &mut App, key: IssueKey) {
+    if let Some(m) = model(app) {
+        m.s.expanded.insert(key);
+    }
 }
 
 /// Make sure the row at `idx` is a local entry (adopting a Jira-only worklog
@@ -372,18 +411,21 @@ pub fn update(app: &mut App, action: Action) {
             let Some(m) = model(app) else { return };
             m.search.insert(c);
             m.s.dirty_since = Some(Instant::now());
+            m.s.expanded.clear();
             m.ticket_sel = 0;
         }
         SearchBackspace => {
             let Some(m) = model(app) else { return };
             m.search.backspace();
             m.s.dirty_since = Some(Instant::now());
+            m.s.expanded.clear();
             m.ticket_sel = 0;
         }
         SearchDelete => {
             let Some(m) = model(app) else { return };
             m.search.delete();
             m.s.dirty_since = Some(Instant::now());
+            m.s.expanded.clear();
             m.ticket_sel = 0;
         }
         SearchCursor(d) => {
@@ -405,6 +447,7 @@ pub fn update(app: &mut App, action: Action) {
                 m.s.sent = None;
                 m.s.loading = false;
                 m.s.dirty_since = None;
+                m.s.expanded.clear();
                 m.ticket_sel = 0;
             }
         }
@@ -454,17 +497,29 @@ pub fn update(app: &mut App, action: Action) {
                 app.set_error("no ticket selected");
                 return;
             };
+            if row.kind == RowKind::More {
+                // "Nothing on it stages anything" — Space expands instead.
+                expand_group(app, row.issue.key);
+                return;
+            }
             stage(app, &row.issue, row.section == Section::Jira);
         }
         StageKey(key) => {
             let Screen::Day(m) = &app.screen else { return };
-            let found = ticket_rows(app, m).into_iter().find(|r| r.issue.key == key);
+            let found = ticket_rows(app, m).into_iter().find(|r| r.issue.key == key && r.kind != RowKind::More);
             if let Some(row) = found {
                 stage(app, &row.issue, row.section == Section::Jira);
             }
         }
+        ExpandGroup(key) => expand_group(app, key),
         OpenForm => {
             let Screen::Day(m) = &app.screen else { return };
+            if let Some(row) = selected_ticket(app, m)
+                && row.kind == RowKind::More
+            {
+                expand_group(app, row.issue.key);
+                return;
+            }
             let date = m.date;
             let issue = selected_ticket(app, m).map(|r| r.issue);
             let start = app.default_start();
@@ -479,16 +534,35 @@ pub fn update(app: &mut App, action: Action) {
         ToggleWatch => {
             let Screen::Day(m) = &app.screen else { return };
             let Some(row) = selected_ticket(app, m) else { return };
-            if app.ledger.is_watched(&row.issue.key) {
-                app.ledger.unwatch(&row.issue.key);
-                app.save_ledger();
-                app.set_status(format!("removed {} from watchlist", row.issue.key));
-                clamp(app);
-            } else {
-                app.ledger.watch(&row.issue.key);
-                app.remote.upsert_watched(&row.issue);
-                app.save_ledger();
-                app.set_status(format!("watching {}", row.issue.key));
+            if row.kind == RowKind::More {
+                // "`w` on it does nothing".
+                return;
+            }
+            // Only parent cards are ever watched (R2 phase 1c): `w` on a
+            // sub-task resolves to its parent before toggling.
+            let target = watch_target(&row.issue);
+            let watch_issue = (!app.ledger.is_watched(&target)).then(|| watch_issue_for(&row.issue, &m.s.results));
+            match watch_issue {
+                None => {
+                    app.ledger.unwatch(&target);
+                    // Drop a legacy entry on the sub-task's own key too.
+                    app.ledger.unwatch(&row.issue.key);
+                    app.save_ledger();
+                    app.set_status(format!("removed {target} from watchlist"));
+                    clamp(app);
+                }
+                Some(watch_issue) => {
+                    app.ledger.watch(&target);
+                    app.remote.upsert_watched(&watch_issue);
+                    // A legacy watchlist entry on the sub-task's own key
+                    // (from before only parents were watchable) migrates to
+                    // its parent now.
+                    if row.issue.key != target {
+                        app.ledger.unwatch(&row.issue.key);
+                    }
+                    app.save_ledger();
+                    app.set_status(format!("watching {target}"));
+                }
             }
         }
         EditCell(cell) => begin_edit(app, None, cell),

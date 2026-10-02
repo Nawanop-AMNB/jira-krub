@@ -1,6 +1,6 @@
 use crate::application::ports::{GatewayError, GatewayErrorKind, IssueWithWorklogs, JiraGateway, Me, NewWorklog, Window};
 use crate::application::Credentials;
-use crate::domain::{Issue, IssueKey, RemoteWorklog, StatusCategory};
+use crate::domain::{Issue, IssueKey, ParentRef, RemoteWorklog, StatusCategory};
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Days, Local, NaiveDate, TimeZone};
 use reqwest::blocking::{Client, RequestBuilder};
@@ -113,27 +113,70 @@ fn extract_error_message(body: &str) -> Option<String> {
     None
 }
 
-/// Fields every issue lookup needs; the tasks tab sorts on `duedate`/`updated`
-/// and colours by `status.statusCategory` (which Jira nests inside `status`).
-const ISSUE_FIELDS: &str = "summary,status,duedate,updated";
+/// Fields every issue lookup needs; the tasks tab sorts on `duedate`/`updated`,
+/// colours by `status.statusCategory` (which Jira nests inside `status`), and
+/// `parent`/`issuetype` tell a real sub-task from an issue that merely has an
+/// Epic parent (R2/R4).
+const ISSUE_FIELDS: &str = "summary,status,duedate,updated,parent,issuetype";
+/// `ISSUE_FIELDS` plus a sub-task's own open/done children: `subtasks` can be
+/// a large payload, so only the free-text ticket search and the assigned
+/// sync search (which needs it to nest an unassigned sub-task under its
+/// assigned parent) pay for it — the history search and single-issue
+/// lookups don't.
+const ISSUE_FIELDS_WITH_SUBTASKS: &str = "summary,status,duedate,updated,parent,issuetype,subtasks";
 
-fn parse_issue(v: &Value) -> Option<Issue> {
-    let fields = &v["fields"];
-    let mut issue = Issue::new(
-        IssueKey::parse(v["key"].as_str()?).ok()?,
-        fields["summary"].as_str().unwrap_or(""),
-        fields["status"]["name"].as_str().unwrap_or(""),
-    );
-    issue.status_category = match fields["status"]["statusCategory"]["key"].as_str() {
+/// `fields.parent`, but only when `fields.issuetype.subtask` says this issue
+/// really is a sub-task — a Story whose `parent` is an Epic must stay `None`.
+fn parse_parent(fields: &Value) -> Option<ParentRef> {
+    if fields["issuetype"]["subtask"].as_bool() != Some(true) {
+        return None;
+    }
+    let parent = &fields["parent"];
+    Some(ParentRef { key: IssueKey::parse(parent["key"].as_str()?).ok()?, summary: parent["fields"]["summary"].as_str().unwrap_or("").to_string() })
+}
+
+/// `fields.subtasks[]`: each child's own key/summary/status, with `parent`
+/// pointing back at `v` so a nested child always knows its parent's summary.
+/// A child with an unparseable key is skipped, not fatal.
+fn parse_subtasks(v: &Value, parent_key: &IssueKey, parent_summary: &str) -> Vec<Issue> {
+    v["fields"]["subtasks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| {
+            let mut child = Issue::new(
+                IssueKey::parse(s["key"].as_str()?).ok()?,
+                s["fields"]["summary"].as_str().unwrap_or(""),
+                s["fields"]["status"]["name"].as_str().unwrap_or(""),
+            );
+            child.status_category = status_category(&s["fields"]["status"]["statusCategory"]["key"]);
+            child.parent = Some(ParentRef { key: parent_key.clone(), summary: parent_summary.to_string() });
+            Some(child)
+        })
+        .collect()
+}
+
+fn status_category(v: &Value) -> StatusCategory {
+    match v.as_str() {
         Some("indeterminate") => StatusCategory::Indeterminate,
         Some("done") => StatusCategory::Done,
         // "new", anything unrecognised, and a missing category all mean "not started".
         _ => StatusCategory::New,
-    };
+    }
+}
+
+fn parse_issue(v: &Value) -> Option<Issue> {
+    let fields = &v["fields"];
+    let key = IssueKey::parse(v["key"].as_str()?).ok()?;
+    let summary = fields["summary"].as_str().unwrap_or("");
+    let mut issue = Issue::new(key.clone(), summary, fields["status"]["name"].as_str().unwrap_or(""));
+    issue.status_category = status_category(&fields["status"]["statusCategory"]["key"]);
     issue.due = fields["duedate"].as_str().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
     if let Some(updated) = fields["updated"].as_str().and_then(|s| DateTime::parse_from_str(s, STARTED_FMT).ok()) {
         issue.updated = updated.date_naive();
     }
+    issue.parent = parse_parent(fields);
+    issue.subtasks = parse_subtasks(v, &key, summary);
     Some(issue)
 }
 
@@ -192,11 +235,12 @@ impl JiraGateway for HttpJiraGateway {
     }
 
     fn search_issues(&self, jql: &str, max: usize) -> Result<Vec<Issue>> {
-        Ok(self.search_raw(jql, max, ISSUE_FIELDS)?.iter().filter_map(parse_issue).collect())
+        Ok(self.search_raw(jql, max, ISSUE_FIELDS_WITH_SUBTASKS)?.iter().filter_map(parse_issue).collect())
     }
 
-    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str) -> Result<Vec<IssueWithWorklogs>> {
-        let raw = self.search_raw(jql, max, &format!("{ISSUE_FIELDS},worklog"))?;
+    fn search_issues_with_worklogs(&self, jql: &str, max: usize, account_id: &str, with_subtasks: bool) -> Result<Vec<IssueWithWorklogs>> {
+        let base = if with_subtasks { ISSUE_FIELDS_WITH_SUBTASKS } else { ISSUE_FIELDS };
+        let raw = self.search_raw(jql, max, &format!("{base},worklog"))?;
         Ok(raw
             .iter()
             .filter_map(|v| {
@@ -216,7 +260,10 @@ impl JiraGateway for HttpJiraGateway {
     }
 
     fn get_issue(&self, key: &IssueKey) -> Result<Issue> {
-        let q = [("fields", "summary,status")];
+        // The per-key watchlist fetch requests `subtasks` too (R2 phase 1c):
+        // a watched card that isn't assigned to me has no other way to get
+        // its own open sub-tasks nested under it.
+        let q = [("fields", ISSUE_FIELDS_WITH_SUBTASKS)];
         let v = self.send(self.http.get(self.url(&format!("/issue/{key}"))).query(&q), &format!("issue {key}"))?;
         parse_issue(&v).context("issue: unparseable")
     }
@@ -390,6 +437,62 @@ mod tests {
         assert_eq!(i.status_category, StatusCategory::New);
         assert_eq!(i.due, None);
         assert_eq!(i.updated, NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(), "a fixed epoch, never today");
+    }
+
+    #[test]
+    fn parse_issue_reads_subtask_parent() {
+        let v = json!({
+            "key": "KAN-15",
+            "fields": {
+                "summary": "Dev",
+                "status": { "name": "To Do" },
+                "issuetype": { "subtask": true },
+                "parent": { "key": "KAN-12", "fields": { "summary": "Fix auth" } }
+            }
+        });
+        let i = parse_issue(&v).expect("parses");
+        assert_eq!(i.parent, Some(crate::domain::ParentRef { key: key("KAN-12"), summary: "Fix auth".into() }));
+    }
+
+    #[test]
+    fn parse_issue_ignores_epic_parent() {
+        let v = json!({
+            "key": "KAN-20",
+            "fields": {
+                "summary": "Story",
+                "status": { "name": "To Do" },
+                "issuetype": { "subtask": false },
+                "parent": { "key": "KAN-1", "fields": { "summary": "Some epic" } }
+            }
+        });
+        let i = parse_issue(&v).expect("parses");
+        assert_eq!(i.parent, None, "an issue whose parent is an Epic is not a sub-task");
+    }
+
+    #[test]
+    fn parse_issue_reads_subtasks_list() {
+        let v = json!({
+            "key": "KAN-12",
+            "fields": {
+                "summary": "Fix auth",
+                "status": { "name": "In Progress" },
+                "subtasks": [
+                    { "key": "KAN-15", "fields": { "summary": "Dev", "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } } } },
+                    { "key": "KAN-16", "fields": { "summary": "QA", "status": { "name": "Done", "statusCategory": { "key": "done" } } } }
+                ]
+            }
+        });
+        let i = parse_issue(&v).expect("parses");
+        assert_eq!(i.subtasks.len(), 2);
+        let dev = &i.subtasks[0];
+        assert_eq!(dev.key, key("KAN-15"));
+        assert_eq!(dev.summary, "Dev");
+        assert_eq!(dev.status_category, StatusCategory::Indeterminate);
+        assert_eq!(dev.parent, Some(crate::domain::ParentRef { key: key("KAN-12"), summary: "Fix auth".into() }));
+        let qa = &i.subtasks[1];
+        assert_eq!(qa.key, key("KAN-16"));
+        assert_eq!(qa.status_category, StatusCategory::Done);
+        assert_eq!(qa.parent, Some(crate::domain::ParentRef { key: key("KAN-12"), summary: "Fix auth".into() }));
     }
 
     #[test]

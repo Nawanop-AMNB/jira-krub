@@ -1,7 +1,7 @@
 use crate::domain::{EntryId, Issue, IssueKey};
 use crate::tui::widgets::TextInput;
 use chrono::NaiveDate;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +45,9 @@ pub struct SearchState {
     pub results: Vec<Issue>,
     pub loading: bool,
     pub cache: HashMap<String, Vec<Issue>>,
+    /// Jira-section groups expanded past the `… +N more` cap, keyed by group
+    /// (parent) key. Reset whenever the search query text changes.
+    pub expanded: HashSet<IssueKey>,
 }
 
 #[derive(Debug)]
@@ -103,6 +106,9 @@ pub enum Action {
     SelectPrepare(usize),
     QuickStage,
     StageKey(IssueKey),
+    /// Lifts the `… +N more` cap for the jira-section group keyed by this
+    /// parent key, showing every child.
+    ExpandGroup(IssueKey),
     OpenForm,
     ToggleWatch,
     EditCell(Cell),

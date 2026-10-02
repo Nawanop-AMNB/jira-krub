@@ -1,11 +1,12 @@
 use super::model::{Action, Cell, Model, Pane};
-use super::rows::{PrepareRows, Section, fmt0, prepare_rows, pushed_total, staged_total, ticket_rows};
+use super::rows::{PrepareRows, RowKind, Section, TicketRow, fmt0, prepare_rows, pushed_total, staged_total, ticket_rows};
 use crate::domain::{DaySummary, duration};
 use crate::tui::action::Action as Global;
 use crate::tui::app::App;
 use crate::tui::hit::{HitArea, HitRegistry};
 use crate::tui::theme;
 use crate::tui::view::Hint;
+use crate::tui::widgets::text::{display_width, pad_to_width};
 use crate::tui::widgets::truncate_to_width;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -103,42 +104,64 @@ fn draw_tickets(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut 
         return;
     }
 
-    // Build display lines: header per section change + rows. Track which line is selected for scrolling.
+    // Build display lines: header per section change, an optional dim
+    // "context" line for a group whose real parent isn't in the list, then
+    // the rows themselves. Track which line is selected for scrolling.
     struct L {
         text: Line<'static>,
         row: Option<usize>,
     }
     let mut lines: Vec<L> = Vec::new();
     let mut last: Option<Section> = None;
+    let base_summary_w = (list.width as usize).saturating_sub(2 + 1 + 1 + 9 + 1);
     for (i, r) in rows.iter().enumerate() {
         if last != Some(r.section) {
-            let count = rows.iter().filter(|x| x.section == r.section).count();
             let label = match r.section {
-                Section::Jira => format!("─ {} ({count}) ", r.section.label()),
+                // "the jira section header count = number of top-level groups", not a flat row count.
+                Section::Jira => format!("─ {} ({}) ", r.section.label(), rows.iter().filter(|x| x.section == Section::Jira && x.group_start).count()),
                 s => format!("─ {} ", s.label()),
             };
             let pad = (list.width as usize).saturating_sub(label.chars().count() + 1);
             lines.push(L { text: Line::from(Span::styled(format!(" {label}{}", "─".repeat(pad)), theme::dim())), row: None });
             last = Some(r.section);
         }
+        if let Some(parent) = &r.context {
+            let text = format!("    {:<9} {}", parent.key, truncate_to_width(&parent.summary, base_summary_w));
+            lines.push(L { text: Line::from(Span::styled(text, theme::dim())), row: None });
+        }
+
         let selected = i == m.ticket_sel;
         let marker = if selected && focused { "▶ " } else { "  " };
-        let star = if r.watched { "*" } else { " " };
-        let key = format!("{:<9}", r.issue.key);
-        let summary_w = (list.width as usize).saturating_sub(2 + 1 + 1 + 9 + 1);
-        let summary = truncate_to_width(&r.issue.summary, summary_w);
         let key_style = match r.section {
             Section::History => theme::dim(),
             _ => theme::issue_key(),
         };
-        let mut line = Line::from(vec![
-            Span::raw(marker),
-            Span::styled(star.to_string(), theme::watched()),
-            Span::raw(" "),
-            Span::styled(key, key_style),
-            Span::raw(" "),
-            Span::styled(summary, if r.section == Section::History { theme::dim() } else { Style::new() }),
-        ]);
+        let mut line = match r.kind {
+            RowKind::More => Line::from(vec![
+                Span::raw(marker),
+                Span::styled(format!("  … +{} more", r.hidden_count), theme::dim()),
+            ]),
+            RowKind::Normal | RowKind::Child => {
+                // A sub-task is indented two columns under its head, `↳` where `*` would be.
+                let lead = if r.kind == RowKind::Child { "  ↳" } else if r.watched { "*" } else { " " };
+                let badge = if r.child_count > 0 { format!("▸{}", r.child_count) } else { String::new() };
+                let summary_w = base_summary_w.saturating_sub(display_width(lead) - 1 + if badge.is_empty() { 0 } else { display_width(&badge) + 1 });
+                let key = format!("{:<9}", r.issue.key);
+                let summary = truncate_to_width(&r.issue.summary, summary_w);
+                let mut spans = vec![
+                    Span::raw(marker),
+                    Span::styled(lead.to_string(), theme::watched()),
+                    Span::raw(" "),
+                    Span::styled(key, key_style),
+                    Span::raw(" "),
+                    Span::styled(pad_to_width(&summary, summary_w), if r.section == Section::History { theme::dim() } else { Style::new() }),
+                ];
+                if !badge.is_empty() {
+                    spans.push(Span::styled(badge, theme::dim()));
+                }
+                Line::from(spans)
+            }
+        };
         if selected {
             line = line.style(if focused { theme::selected() } else { theme::bold() });
         }
@@ -154,15 +177,27 @@ fn draw_tickets(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut 
         let rect = Rect { x: list.x, y: list.y + k as u16, width: list.width, height: 1 };
         frame.render_widget(Paragraph::new(l.text.clone()), rect);
         if let Some(i) = l.row {
-            hits.add(HitArea {
-                rect,
-                click: Some(Global::Day(Action::SelectTicket(i))),
-                double: Some(Global::Day(Action::StageKey(rows[i].issue.key.clone()))),
-                drag: Some(rows[i].issue.key.clone()),
-                scroll_up: Some(Global::Day(Action::Up)),
-                scroll_down: Some(Global::Day(Action::Down)),
-                ..Default::default()
-            });
+            let row: &TicketRow = &rows[i];
+            let hit = match row.kind {
+                RowKind::More => HitArea {
+                    rect,
+                    click: Some(Global::Day(Action::SelectTicket(i))),
+                    double: Some(Global::Day(Action::ExpandGroup(row.issue.key.clone()))),
+                    scroll_up: Some(Global::Day(Action::Up)),
+                    scroll_down: Some(Global::Day(Action::Down)),
+                    ..Default::default()
+                },
+                RowKind::Normal | RowKind::Child => HitArea {
+                    rect,
+                    click: Some(Global::Day(Action::SelectTicket(i))),
+                    double: Some(Global::Day(Action::StageKey(row.issue.key.clone()))),
+                    drag: Some(row.issue.key.clone()),
+                    scroll_up: Some(Global::Day(Action::Up)),
+                    scroll_down: Some(Global::Day(Action::Down)),
+                    ..Default::default()
+                },
+            };
+            hits.add(hit);
         }
     }
 }
@@ -322,8 +357,15 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
             key_style = key_style.add_modifier(Modifier::REVERSED);
         }
         frame.render_widget(Paragraph::new(Span::styled(format!("{:<w$}", row.key().to_string(), w = C_KEY as usize), key_style)), Rect { x: x_key, y, width: C_KEY, height: 1 });
-        // issue title (read-only, from Jira)
-        let summary = app.remote.issue(row.key()).map(|i| i.summary.clone()).unwrap_or_default();
+        // issue title (read-only, from Jira): `child · parent summary` for a sub-task
+        let summary = app
+            .remote
+            .issue(row.key())
+            .map(|i| match &i.parent {
+                Some(parent) => format!("{} · {}", i.summary, parent.summary),
+                None => i.summary.clone(),
+            })
+            .unwrap_or_default();
         let mut sum_style = if deleted { theme::dim().add_modifier(Modifier::CROSSED_OUT) } else { theme::dim() };
         if selected {
             sum_style = sum_style.add_modifier(Modifier::REVERSED);
