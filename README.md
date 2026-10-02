@@ -68,10 +68,10 @@ work, not logging it.
 
 ┌ my tasks · 8 ────────────────────────────────────────────────────────────────┐
 │ 🔍  type to filter                                                           │
-│ ─ In Progress · 3 ───────────────────────────────────────────────────────── │
+│ ─ In Progress (assigned to me: 3) ──────────────────────────────────────────│
 │▶  KAN-12    Fix auth token expiry               due Fri 19 Sep  updated today│
 │   KAN-9     Refactor worklog sync               due today       updated 1d ago│
-│ ─ To Do · 4 ─────────────────────────────────────────────────────────────── │
+│ ─ To Do (assigned to me: 4) ────────────────────────────────────────────────│
 │   KAN-14    Migrate config                      overdue 2d      updated 2d ago│
 └──────────────────────────────────────────────────────────────────────────────┘
  Enter open in Jira · ↑↓ move · / filter · r sync · Tab worklogs · , settings · q quit

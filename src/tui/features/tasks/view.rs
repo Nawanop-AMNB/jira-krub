@@ -120,7 +120,9 @@ fn draw_list(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut Hit
     let mut lines: Vec<L> = Vec::new();
     let mut i = 0usize;
     for (g, nested) in &nested_groups {
-        let label = format!(" ─ {} · {} ", g.status, g.issues.len());
+        // Sub-tasks listed under an assigned card are not mine; say what is counted.
+        let assigned = g.issues.iter().filter(|i| app.remote.mine.iter().any(|m| m.key == i.key)).count();
+        let label = format!(" ─ {} (assigned to me: {assigned}) ", g.status);
         let pad = (area.width as usize).saturating_sub(display_width(&label));
         lines.push(L { text: Line::from(Span::styled(format!("{label}{}", "─".repeat(pad)), theme::dim())), row: None });
         for n in nested {

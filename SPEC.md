@@ -674,13 +674,13 @@ Three screens. All mockups at 80 columns.
 
 ┌ my tasks · 8 · synced 2m ago ────────────────────────────────────────────────┐
 │ 🔍  type to filter                                                           │
-│ ─ In Progress · 3 ───────────────────────────────────────────────────────── │
+│ ─ In Progress (assigned to me: 3) ──────────────────────────────────────────│
 │▶  KAN-12    Fix auth token expiry               due Fri 19 Sep  updated today│
 │   KAN-9     Refactor worklog sync               due today       updated 1d ago│
 │   STW-140   Support: SSO outage                                 updated 3d   │
-│ ─ In Review · 1 ─────────────────────────────────────────────────────────── │
+│ ─ In Review (assigned to me: 1) ────────────────────────────────────────────│
 │   KAN-11    Add retry to client                 overdue 2d      updated 5h   │
-│ ─ To Do · 4 ─────────────────────────────────────────────────────────────── │
+│ ─ To Do (assigned to me: 4) ────────────────────────────────────────────────│
 │   KAN-14    Migrate config                      due 30 Sep      updated 2d   │
 │   KAN-15    Fix pagination                                      updated 6d   │
 │   KAN-16    Write docs                                          updated 8d   │

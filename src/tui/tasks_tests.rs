@@ -123,9 +123,9 @@ fn groups_render_in_order_with_counts_and_cursor_on_first_row() {
     let mut h = harness("tasks-groups", script_with_issues(eight_tasks()));
     let rows = render(&mut h.app);
 
-    let ip = row_with(&rows, "─ In Progress · 3");
-    let ir = row_with(&rows, "─ In Review · 1");
-    let td = row_with(&rows, "─ To Do · 4");
+    let ip = row_with(&rows, "─ In Progress (assigned to me: 3)");
+    let ir = row_with(&rows, "─ In Review (assigned to me: 1)");
+    let td = row_with(&rows, "─ To Do (assigned to me: 4)");
     assert!(ip < ir && ir < td, "indeterminate before new, then alphabetical: {ip} {ir} {td}");
 
     let marked: Vec<usize> = rows.iter().enumerate().filter(|(_, r)| r.contains('▶')).map(|(i, _)| i).collect();
@@ -146,7 +146,7 @@ fn down_skips_group_header() {
     let rows = render(&mut h.app);
     let marked = row_with(&rows, "▶");
     assert!(rows[marked].contains("KAN-4"));
-    assert!(rows[marked - 1].contains("─ In Review · 1"), "the header is right above, unselected");
+    assert!(rows[marked - 1].contains("─ In Review (assigned to me: 1)"), "the header is right above, unselected");
 }
 
 // ---- U5: the filter box -----------------------------------------------------
@@ -175,7 +175,7 @@ fn up_from_first_row_enters_filter_and_hides_cursor() {
     ctrl(&mut h.app, 'u');
     assert_eq!(visible_keys(&h.app), vec!["KAN-1", "KAN-2", "KAN-5"], "Ctrl+U restores every row");
     let rows = render(&mut h.app);
-    assert!(rows.iter().any(|r| r.contains("─ To Do · 1")));
+    assert!(rows.iter().any(|r| r.contains("─ To Do (assigned to me: 1)")));
 }
 
 // ---- U6 / U7: opening in the browser ----------------------------------------
@@ -513,4 +513,16 @@ fn a_subtask_without_an_updated_date_shows_no_updated_label() {
     let rows = render(&mut h.app);
     let c = row_with(&rows, "KAN-7");
     assert!(!rows[c].contains("updated"), "{:?}", rows[c]);
+}
+
+#[test]
+fn group_header_counts_only_issues_assigned_to_me() {
+    // KAN-7 rides along under KAN-6 but is not assigned to me.
+    let mut parent = with_summary(task("KAN-6", "In Progress", StatusCategory::Indeterminate), "Testing Task 2");
+    parent.subtasks = vec![child_task("KAN-7", "[DEV]", "To Do", StatusCategory::New, "KAN-6", "Testing Task 2")];
+    let other = task("KAN-2", "In Progress", StatusCategory::Indeterminate);
+    let mut h = harness("tasks-group-assigned-count", script_with_issues(vec![parent, other]));
+
+    let rows = render(&mut h.app);
+    assert!(rows.iter().any(|r| r.contains("─ In Progress (assigned to me: 2) ")), "{}", rows.join("\n"));
 }
