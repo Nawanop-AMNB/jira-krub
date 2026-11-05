@@ -95,3 +95,5 @@ mod entry_form_tests;
 mod tasks_tests;
 #[cfg(test)]
 mod week_view_tests;
+#[cfg(test)]
+mod day_off_tests;

@@ -104,17 +104,26 @@ work never counts toward the target, so a forgotten push cannot look done.
 │   Fri 18   ────────────────────────  –         future                        │
 │   Sat 19   off · Songkran                                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
- Enter open day · a add · p push · ←→ week · t today · r sync · Tab tasks · , settings · q quit
+ Enter open day · a add · x day off · p push · ←→ week · t today · r sync · Tab tasks · , settings · q quit
 ```
 
-`Enter` opens the day, `a` stages an entry through the popup, `p` pushes the
-week, `←→` move a week, `t` jumps to today. Holidays and non-workdays show
-`off` and drop out of the weekly target.
+`Enter` opens the day, `a` stages an entry through the popup, `x` adds or
+edits a day off on the selected day, `p` pushes the week, `←→` move a week,
+`t` jumps to today. Days off and non-workdays show `off` and drop out of the
+weekly target.
+
+The `x` popup has `date` and `name` fields and `[ Save ]` / `[ Cancel ]`
+buttons, plus a red `[ Delete ]` when the day already is a day off. `↑↓`
+move between rows, `←→` move the cursor (or between buttons), `Tab` cycles,
+`Enter` on a field moves on and on a button presses it, `Esc` closes.
+A blank name saves as `day off`.
 
 ### Day view — tickets | prepare logwork
 
 Left: your tickets (watchlist, assigned, recently logged) with a search box.
-Right: the entries staged for that day, plus what is already in Jira.
+Right: the entries staged for that day, plus what is already in Jira. A
+sub-task's ticket reads `KAN-12 → 15` (parent → child), and a `!` before it
+flags an entry whose time overlaps another.
 
 - Tickets: type to filter locally, Jira search after 300 ms for ≥ 2 chars.
   `Space` / double-click / drag stages 1h at 09:00 (both configurable),
@@ -149,7 +158,7 @@ so remaining estimates are never touched.
 
 `Tab` switches **Global** (hours per day, workdays, default start, quick-stage
 duration, history lookback, auto-watch, Jira connection) and **Year** (`[` `]`
-or `←→` pick the year; target override, public holidays). `↑↓` walk fields,
+or `←→` pick the year; target override, days off). `↑↓` walk fields,
 `Enter` opens a field, `Enter` commits, `Esc` reverts, `Ctrl+S` saves.
 
 ### Key conventions

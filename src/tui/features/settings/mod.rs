@@ -5,7 +5,7 @@ mod model;
 mod update;
 mod view;
 
-pub use model::{Action, Model};
+pub use model::{Action, Model, normalise_date};
 pub use update::{keys, update};
 pub use view::view;
 #[cfg(test)]

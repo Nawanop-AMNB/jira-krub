@@ -32,5 +32,7 @@ pub enum Action {
     Select(usize),
     OpenDay(usize),
     AddEntry,
+    /// `x`: add / edit / remove the selected day's day off.
+    OpenDayOff,
     PushWeek,
 }

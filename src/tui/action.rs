@@ -1,4 +1,4 @@
-use super::features::{connect, day, entry_form, settings, tasks, week};
+use super::features::{connect, day, day_off, entry_form, settings, tasks, week};
 use crate::domain::Week;
 use chrono::NaiveDate;
 
@@ -20,6 +20,7 @@ pub enum Action {
     Tasks(tasks::Action),
     Day(day::Action),
     Form(entry_form::Action),
+    DayOff(day_off::Action),
     ConfirmYes,
     ConfirmNo,
     PushRequest(PushScope),

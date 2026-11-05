@@ -151,7 +151,8 @@ Ordered by priority.
   weekly target.
 - The week summary is the **Worklogs** tab of the main screen (R17).
 - Keys: `←/→` or `[`/`]` shift week · `t` current week · `j/k` select day ·
-  `Enter` open day view · `a` stage entry on selected day · `p` push week.
+  `Enter` open day view · `a` stage entry on selected day · `x` add / edit /
+  delete a day off on the selected day · `p` push week.
 - AC: with Mon–Tue at 8h pushed and Wed at 6h15 (2h staged), rows read
   `8h ✓`, `8h ✓`, `6h15 need 1h45 · 2 staged`.
 
@@ -465,7 +466,7 @@ years with no config show defaults).
 | Field | Default | Effect |
 |-------|---------|--------|
 | Target hours / day (override) | blank = global | wins over global for that year |
-| Public holidays | none | list of `date · name`; add / edit / remove. Enter walks date → name; dates accept `2026-12-5`, `12-5`, `12/05`, `1205` and are normalised to `YYYY-MM-DD` in the tab's year |
+| Days off | none | list of `date · name`; add / edit / remove. Enter walks date → name; dates accept `2026-12-5`, `12-5`, `12/05`, `1205` and are normalised to `YYYY-MM-DD` in the tab's year |
 
 Holiday semantics: a holiday (or non-workday) shows `off` dimmed instead
 of red `empty`, never needs hours, and drops out of the weekly target

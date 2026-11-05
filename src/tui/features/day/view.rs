@@ -1,6 +1,6 @@
 use super::model::{Action, Cell, Model, Pane};
 use super::rows::{PrepareRows, RowKind, Section, TicketRow, fmt0, prepare_rows, pushed_total, staged_total, ticket_rows};
-use crate::domain::{DaySummary, duration};
+use crate::domain::{DaySummary, IssueKey, duration};
 use crate::tui::action::Action as Global;
 use crate::tui::app::App;
 use crate::tui::hit::{HitArea, HitRegistry};
@@ -206,16 +206,34 @@ fn draw_tickets(frame: &mut Frame, app: &App, m: &Model, area: Rect, hits: &mut 
 const C_MARK: u16 = 2;
 const C_START: u16 = 5;
 const C_DUR: u16 = 7;
-const C_KEY: u16 = 10;
+/// Ticket column: wide enough for the longest `PARENT → CHILD` label, within bounds.
+const C_KEY_MIN: u16 = 10;
+const C_KEY_MAX: u16 = 21;
 /// Issue summary column (read-only), truncated. Shrinks on narrow panes.
-const C_SUM_MAX: u16 = 22;
+const C_SUM_MAX: u16 = 40;
 const C_SUM_MIN: u16 = 8;
+/// The description column never gets less than this when the title shrinks to make room.
+const C_DESC_MIN: u16 = 14;
 
-fn summary_width(pane_width: u16) -> u16 {
-    let fixed = C_MARK + C_START + C_DUR + C_KEY + GAP * 4 + 2;
-    let spare = pane_width.saturating_sub(fixed + 14);
-    (spare / 2).clamp(C_SUM_MIN, C_SUM_MAX)
+/// Width of the title column: two thirds of the space left after the fixed
+/// columns, leaving the description at least `C_DESC_MIN`.
+fn summary_width(pane_width: u16, key_width: u16) -> u16 {
+    let fixed = C_MARK + C_START + C_DUR + key_width + GAP * 4 + 2;
+    let spare = pane_width.saturating_sub(fixed);
+    (spare * 2 / 3).min(spare.saturating_sub(C_DESC_MIN)).clamp(C_SUM_MIN, C_SUM_MAX)
 }
+
+/// `PARENT → CHILD` for a sub-task, else just the key. When both share a
+/// project the child drops its prefix: `KAN-12 → 15`.
+fn ticket_label(app: &App, key: &IssueKey) -> String {
+    let Some(parent) = app.remote.issue(key).and_then(|i| i.parent.as_ref()) else { return key.to_string() };
+    let child = match (parent.key.as_str().rsplit_once('-'), key.as_str().rsplit_once('-')) {
+        (Some((pp, _)), Some((cp, num))) if pp == cp => num,
+        _ => key.as_str(),
+    };
+    format!("{} → {child}", parent.key)
+}
+
 const GAP: u16 = 2;
 
 fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, area: Rect, hits: &mut HitRegistry) {
@@ -225,14 +243,16 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
     hits.add(HitArea { rect: area, drop_target: true, click: Some(Global::Day(Action::FocusPrepare)), scroll_up: Some(Global::Day(Action::Up)), scroll_down: Some(Global::Day(Action::Down)), ..Default::default() });
 
     let x_start0 = area.x + C_MARK;
-    let c_sum = summary_width(area.width);
+    let labels: Vec<String> = rows.rows.iter().map(|r| ticket_label(app, r.key())).collect();
+    let c_key = (labels.iter().map(|l| display_width(l)).max().unwrap_or(0) as u16).clamp(C_KEY_MIN, C_KEY_MAX);
+    let c_sum = summary_width(area.width, c_key);
     let y = area.y + 1;
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{:<w$}", "start", w = (C_START + GAP) as usize), theme::dim()),
             Span::styled(format!("{:<w$}", "dur", w = (C_DUR + GAP) as usize), theme::dim()),
-            Span::styled(format!("{:<w$}", "ticket", w = (C_KEY + GAP) as usize), theme::dim()),
+            Span::styled(format!("{:<w$}", "ticket", w = (c_key + GAP) as usize), theme::dim()),
             Span::styled(format!("{:<w$}", "title", w = (c_sum + GAP) as usize), theme::dim()),
             Span::styled("description", theme::dim()),
         ])),
@@ -303,7 +323,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         let x_start = x_start0;
         let x_dur = x_start + start_w + GAP;
         let x_key = x_dur + dur_w + GAP;
-        let x_sum = x_key + C_KEY + GAP;
+        let x_sum = x_key + c_key + GAP;
         let x_title = x_sum + c_sum + GAP;
         let title_w = (area.x + area.width).saturating_sub(x_title + if in_jira { 2 } else { 0 });
 
@@ -356,7 +376,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         if selected {
             key_style = key_style.add_modifier(Modifier::REVERSED);
         }
-        frame.render_widget(Paragraph::new(Span::styled(format!("{:<w$}", row.key().to_string(), w = C_KEY as usize), key_style)), Rect { x: x_key, y, width: C_KEY, height: 1 });
+        frame.render_widget(Paragraph::new(Span::styled(pad_to_width(&truncate_to_width(&labels[i], c_key as usize), c_key as usize), key_style)), Rect { x: x_key, y, width: c_key, height: 1 });
         // issue title (read-only, from Jira): `child · parent summary` for a sub-task
         let summary = app
             .remote
@@ -372,7 +392,7 @@ fn draw_prepare(frame: &mut Frame, app: &App, m: &Model, rows: &PrepareRows, are
         }
         frame.render_widget(Paragraph::new(Span::styled(truncate_to_width(&summary, c_sum as usize), sum_style)), Rect { x: x_sum, y, width: c_sum, height: 1 });
         if overlaps && !deleted {
-            frame.render_widget(Paragraph::new(Span::styled("!", theme::warn())), Rect { x: x_key + C_KEY, y, width: 1, height: 1 });
+            frame.render_widget(Paragraph::new(Span::styled("!", theme::warn())), Rect { x: x_key - 1, y, width: 1, height: 1 });
         }
         if in_jira {
             frame.render_widget(Paragraph::new(Span::styled("✓", theme::good())), Rect { x: area.x + area.width - 1, y, width: 1, height: 1 });

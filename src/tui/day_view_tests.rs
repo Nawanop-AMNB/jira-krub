@@ -378,7 +378,7 @@ fn staging_jira_subtask_watches_parent() {
     assert!(rows[watch_header + 1].contains("KAN-12") && rows[watch_header + 1].contains("Fix auth"), "real summary, not …: {:?}", rows[watch_header + 1]);
     assert!(rows[watch_header + 2].contains("↳") && rows[watch_header + 2].contains("KAN-15"), "{:?}", rows[watch_header + 2]);
 
-    let r = row_with(&rows, "KAN-15");
+    let r = row_with(&rows, "KAN-12 → 15");
     assert!(rows[r].contains("Dev · F"), "{:?}", rows[r]);
 }
 
@@ -474,10 +474,112 @@ fn prepare_title_shows_child_and_parent() {
     stage(&mut h.app, "e1", "KAN-15", date, "09:00", 3600);
 
     let rows = render(&mut h.app);
-    let r = row_with(&rows, "KAN-15");
+    let r = row_with(&rows, "KAN-12 → 15");
     // the column is narrow and truncates at the end, so only check the start:
     // "child · parent summary" (e.g. "Dev · Fix auth...").
     assert!(rows[r].contains("Dev · F"), "{:?}", rows[r]);
+}
+
+/// The right ("prepare logwork") pane of a rendered frame, one string per
+/// screen row, so assertions never match the left ticket pane.
+fn prepare_pane(rows: &[String]) -> Vec<String> {
+    let header = row_with(rows, "prepare logwork");
+    let x = rows[header].find("prepare logwork").map(|b| rows[header][..b].chars().count()).unwrap();
+    rows.iter().map(|r| r.chars().skip(x).collect()).collect()
+}
+
+/// Char index of `needle` within `row`.
+fn col_of(row: &str, needle: &str) -> usize {
+    let b = row.find(needle).unwrap_or_else(|| panic!("{needle:?} not in {row:?}"));
+    row[..b].chars().count()
+}
+
+#[test]
+fn prepare_ticket_shows_parent_arrow_child_for_subtask() {
+    let (mut h, date) = day_view("day-prepare-arrow");
+    h.app.remote.upsert_watched(&child_of("KAN-15", "Dev", "KAN-12", "Fix auth"));
+    stage(&mut h.app, "e1", "KAN-15", date, "09:00", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    assert!(pane.iter().any(|r| r.contains("KAN-12 → 15")), "{}", pane.join("\n"));
+}
+
+#[test]
+fn prepare_ticket_keeps_child_prefix_across_projects() {
+    let (mut h, date) = day_view("day-prepare-cross-project");
+    h.app.remote.upsert_watched(&child_of("OPS-7", "Dev", "KAN-12", "Fix auth"));
+    stage(&mut h.app, "e1", "OPS-7", date, "09:00", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    assert!(pane.iter().any(|r| r.contains("KAN-12 → OPS-7")), "{}", pane.join("\n"));
+}
+
+#[test]
+fn prepare_overlap_marker_before_plain_key() {
+    let (mut h, date) = day_view("day-prepare-overlap-plain");
+    stage(&mut h.app, "e1", "KAN-1", date, "10:00", 3600);
+    stage(&mut h.app, "e2", "KAN-2", date, "10:30", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let r = row_with(&pane, "10:00");
+    assert!(pane[r].contains("!KAN-1 "), "{:?}", pane[r]);
+}
+
+#[test]
+fn prepare_ticket_shows_plain_key_for_normal_issue() {
+    let (mut h, date) = day_view("day-prepare-plain");
+    stage(&mut h.app, "e1", "KAN-1", date, "09:00", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let r = row_with(&pane, "09:00");
+    assert!(pane[r].contains("KAN-1"), "{:?}", pane[r]);
+    assert!(!pane[r].contains('→'), "{:?}", pane[r]);
+}
+
+#[test]
+fn prepare_ticket_falls_back_to_own_key_when_issue_unknown() {
+    let (mut h, date) = day_view("day-prepare-unknown");
+    stage(&mut h.app, "e1", "KAN-99", date, "09:00", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let r = row_with(&pane, "KAN-99");
+    assert!(!pane[r].contains('→'), "{:?}", pane[r]);
+}
+
+#[test]
+fn prepare_columns_stay_aligned_with_mixed_rows() {
+    let (mut h, date) = day_view("day-prepare-aligned");
+    h.app.remote.upsert_watched(&child_of("KAN-15", "Dev", "KAN-12", "Fix auth"));
+    stage(&mut h.app, "e1", "KAN-1", date, "09:00", 1800);
+    stage(&mut h.app, "e2", "KAN-15", date, "10:00", 1800);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let plain = col_of(&pane[row_with(&pane, "summary of")], "summary of");
+    let sub = col_of(&pane[row_with(&pane, "Dev ·")], "Dev ·");
+    assert_eq!(plain, sub, "{}", pane.join("\n"));
+}
+
+#[test]
+fn prepare_title_column_fits_24_char_summary() {
+    let (mut h, date) = day_view_with("day-prepare-wide-title", vec![with_summary(issue("KAN-3"), "Implement CSV export now")]);
+    let id = stage(&mut h.app, "e1", "KAN-3", date, "09:00", 3600);
+    h.app.ledger.update(&id, |e| e.title = "write unit tests for it".to_string());
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let r = row_with(&pane, "write unit t");
+    assert!(pane[r].contains("Implement CSV export now"), "{:?}", pane[r]);
+}
+
+#[test]
+fn prepare_overlap_marker_sits_before_ticket() {
+    let (mut h, date) = day_view("day-prepare-overlap");
+    h.app.remote.upsert_watched(&child_of("KAN-15", "Dev", "KAN-12", "Fix auth"));
+    stage(&mut h.app, "e1", "KAN-15", date, "10:00", 3600);
+    stage(&mut h.app, "e2", "KAN-1", date, "10:30", 3600);
+
+    let pane = prepare_pane(&render(&mut h.app));
+    let r = row_with(&pane, "KAN-12 → 15");
+    assert!(pane[r].contains("!KAN-12 → 15"), "{:?}", pane[r]);
 }
 
 // ---- mine section expands assigned cards' own sub-tasks (phase 1b) --------
