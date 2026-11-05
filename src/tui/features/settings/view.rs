@@ -198,7 +198,7 @@ fn draw_year(frame: &mut Frame, m: &Model, inner: Rect, mut y: u16, hits: &mut H
     text_row(frame, hits, inner, y, "Target hours / day", &d.hours, (f == YearField::Hours && m.holiday_edit.is_none(), m.editing), "blank = global", Global::Settings(Action::FocusYear(YearField::Hours)));
     y += 1;
 
-    label(frame, inner, y, "Public holidays", matches!(f, YearField::Holiday(_)));
+    label(frame, inner, y, "Days off", matches!(f, YearField::Holiday(_)));
     let x = value_x(inner) + 1;
     let row_w = (inner.x + inner.width).saturating_sub(x + PAD);
     if d.holidays.is_empty() && m.holiday_edit.is_none() {
@@ -238,7 +238,7 @@ fn draw_year(frame: &mut Frame, m: &Model, inner: Rect, mut y: u16, hits: &mut H
         y += 1;
     }
     let add_focused = f == YearField::AddHoliday;
-    let text = "+ add holiday";
+    let text = "+ add day off";
     let style = if add_focused { theme::accent().add_modifier(Modifier::REVERSED) } else { theme::accent() };
     let rect = Rect { x, y, width: text.len() as u16, height: 1 };
     frame.render_widget(Paragraph::new(Span::styled(text, style)), rect);

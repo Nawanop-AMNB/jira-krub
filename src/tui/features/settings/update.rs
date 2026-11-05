@@ -163,9 +163,9 @@ fn build_config(app: &App, m: &Model) -> Result<Config, (String, Option<GlobalFi
         };
         let mut holidays = Vec::new();
         for row in &d.holidays {
-            let h = Model::holiday_from_row(row).ok_or_else(|| (format!("{}: bad holiday date '{}' (YYYY-MM-DD)", d.year, row.date), None))?;
+            let h = Model::holiday_from_row(row).ok_or_else(|| (format!("{}: bad day-off date '{}' (YYYY-MM-DD)", d.year, row.date), None))?;
             if h.date.format("%Y").to_string() != d.year.to_string() {
-                return Err((format!("{}: holiday {} is not in that year", d.year, row.date), None));
+                return Err((format!("{}: day off {} is not in that year", d.year, row.date), None));
             }
             holidays.push(h);
         }

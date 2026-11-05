@@ -42,6 +42,7 @@ pub fn view(frame: &mut Frame, app: &App, m: &Model, body: Rect, hits: &mut HitR
     vec![
         Hint::new("Enter", "open day", Global::Week(Action::OpenDay(m.selected))),
         Hint::new("a", "add", Global::Week(Action::AddEntry)),
+        Hint::new("x", "day off", Global::Week(Action::OpenDayOff)),
         Hint::new("p", "push", Global::Week(Action::PushWeek)),
         Hint::new("←→", "week", Global::Nop),
         Hint::new("t", "today", Global::Week(Action::Today)),

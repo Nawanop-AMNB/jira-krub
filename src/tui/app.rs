@@ -1,6 +1,6 @@
 use super::action::{Action, PushScope};
 use super::deps::Deps;
-use super::features::{connect, day, entry_form, push, settings, tasks, week};
+use super::features::{connect, day, day_off, entry_form, push, settings, tasks, week};
 use super::hit::HitRegistry;
 use super::msg::{Msg, SyncError};
 use crate::application::ports::{GatewayErrorKind, Window};
@@ -74,6 +74,7 @@ pub enum MainTab {
 
 pub enum Overlay {
     Form(Box<entry_form::Model>),
+    DayOff(day_off::Model),
     Confirm(Confirm),
 }
 
@@ -255,6 +256,9 @@ impl App {
     pub fn open_form(&mut self, model: entry_form::Model) {
         self.overlay = Some(Overlay::Form(Box::new(model)));
     }
+    pub fn open_day_off(&mut self, model: day_off::Model) {
+        self.overlay = Some(Overlay::DayOff(model));
+    }
     pub fn confirm(&mut self, text: impl Into<String>, yes: Action) {
         self.overlay = Some(Overlay::Confirm(Confirm { text: text.into(), yes }));
     }
@@ -410,6 +414,7 @@ impl App {
                 _ => None,
             },
             Some(Overlay::Form(m)) => entry_form::keys(m, &key),
+            Some(Overlay::DayOff(_)) => day_off::keys(&key),
             None => match &self.screen {
                 Screen::Connect(m) => connect::keys(m, &key),
                 Screen::Settings(m) => settings::keys(m, &key),
@@ -426,6 +431,7 @@ impl App {
     pub fn on_paste(&mut self, text: String) {
         let action = match &self.overlay {
             Some(Overlay::Form(_)) => Some(Action::Form(entry_form::Action::Paste(text))),
+            Some(Overlay::DayOff(_)) => Some(Action::DayOff(day_off::Action::Paste(text))),
             Some(Overlay::Confirm(_)) => None,
             None => match &self.screen {
                 Screen::Connect(_) => Some(Action::Connect(connect::Action::Paste(text))),
@@ -521,6 +527,7 @@ impl App {
             Action::Tasks(a) => tasks::update(self, a),
             Action::Day(a) => day::update(self, a),
             Action::Form(a) => entry_form::update(self, a),
+            Action::DayOff(a) => day_off::update(self, a),
         }
     }
 

@@ -2,7 +2,7 @@ use super::model::{Action, Model};
 use crate::domain::Week;
 use crate::tui::action::{Action as Global, PushScope};
 use crate::tui::app::{App, Screen};
-use crate::tui::features::entry_form;
+use crate::tui::features::{day_off, entry_form};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
@@ -19,6 +19,7 @@ pub fn keys(m: &Model, key: &KeyEvent) -> Option<Global> {
         KeyCode::Char('k') | KeyCode::Up => Up,
         KeyCode::Enter => OpenDay(m.selected),
         KeyCode::Char('a') | KeyCode::Char(' ') => AddEntry,
+        KeyCode::Char('x') => OpenDayOff,
         KeyCode::Char('p') => PushWeek,
         _ => return None,
     };
@@ -55,6 +56,13 @@ pub fn update(app: &mut App, action: Action) {
             let start = app.default_start();
             let form = entry_form::Model::new_entry(date, None, start, app.local_issues());
             app.open_form(form);
+        }
+        OpenDayOff => {
+            let date = m.selected_date();
+            match app.config.as_ref().map(|cfg| day_off::Model::new(date, cfg.day_off(date))) {
+                Some(model) => app.open_day_off(model),
+                None => app.set_error("not connected"),
+            }
         }
         PushWeek => {
             let scope = PushScope::Week(m.week);

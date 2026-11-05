@@ -1,6 +1,6 @@
 use super::action::Action;
 use super::app::{App, MainTab, Overlay, Screen, StatusKind};
-use super::features::{connect, day, entry_form, settings, tasks, week};
+use super::features::{connect, day, day_off, entry_form, settings, tasks, week};
 use super::hit::HitRegistry;
 use super::theme;
 use super::widgets::tab_bar;
@@ -45,6 +45,7 @@ pub fn draw(frame: &mut Frame, app: &App, hits: &mut HitRegistry) {
 
     let hints = match &app.overlay {
         Some(Overlay::Form(m)) => entry_form::view(frame, app, m, body, hits),
+        Some(Overlay::DayOff(m)) => day_off::view(frame, m, body, hits),
         Some(Overlay::Confirm(c)) => {
             draw_confirm(frame, &c.text, body, hits);
             vec![Hint::new("y", "yes", Action::ConfirmYes), Hint::new("n", "no", Action::ConfirmNo)]
